@@ -48,9 +48,9 @@ Typical flow: `/pd` → read round 0 → `/pd-steer` or `/pd-ask` → `/pd-debat
 
 ## Web research (optional)
 
-Off by default. With `research: true` in [`panel.yaml`](panel.yaml) — or `/pd --research <topic>` for one discussion — each panelist gets two extra tools, `web_search` and `fetch_url`, both wrapping [Exa](https://exa.ai). Search results come back with the page text inline, so a panelist can check a claim and quote the source in the same call rather than arguing from memory.
+Off by default. With `research: true` in your `panel.yaml` — or `/pd --research <topic>` for one discussion — each panelist gets two extra tools, `web_search` and `fetch_url`, both wrapping [Exa](https://exa.ai). Search results come back with the page text inline, so a panelist can check a claim and quote the source in the same call rather than arguing from memory.
 
-**The key never goes in this repo** — there is no `auth.json` here and no `.example` twin to fill in. It lives in pi's own credential store, `~/.pi/agent/auth.json`, alongside your model keys, under the provider id `exa`:
+**The key never goes in this repo** — there is no `auth.json` here and no credential template to fill in. It lives in pi's own credential store, `~/.pi/agent/auth.json`, alongside your model keys, under the provider id `exa`:
 
 ```jsonc
 {
@@ -83,11 +83,14 @@ discussions/2026-08-26-topic-slug/
 
 ```bash
 bun install
+cp panel.yaml.example panel.yaml
 bun run typecheck
 bun test test/
 ```
 
-No config secrets: auth — model keys and the optional Exa key alike — comes from the normal `agentDir` `auth.json` that pi already reads, so [`panel.yaml`](panel.yaml) is tracked with no `.example` twin. Edit it to pick your slots — 2–5 of them, each `name` / `model` / `thinking` / `color`, plus an optional `persona`.
+Then edit `panel.yaml` to pick your slots — 2–5 of them, each `name` / `model` / `thinking` / `color`, plus an optional `persona`. Each `model` is a `provider/id` **your** pi resolves, so take the ids from pi's own `/model` picker rather than from the example.
+
+`panel.yaml` holds no secrets — auth, model keys and the optional Exa key alike, comes from the normal `agentDir` `auth.json` that pi already reads. It is gitignored anyway: it names the models this machine resolves and pays for, which is yours to choose, not the project's to ship. [`panel.yaml.example`](panel.yaml.example) is the tracked twin.
 
 ## Live smoke
 

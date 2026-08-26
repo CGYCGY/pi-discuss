@@ -37,8 +37,8 @@ session, and the product is prose you read, not a JSON result a driver greps for
   panel slot.
 - **Panelists = child `AgentSession`s**, one per slot, created in-process (§2.1).
 - **No RPC surface, no result event, no config secrets** — auth comes from the normal `agentDir`
-  `auth.json` that `ModelRuntime` already reads, so `panel.yaml` is tracked in git with no
-  `.example` twin (§3).
+  `auth.json` that `ModelRuntime` already reads, so `panel.yaml` holds nothing secret. It is still
+  untracked, because secret-free is not the same as portable (§3).
 
 Two principles from [`../../docs/building-pi-agents.md`](../../docs/building-pi-agents.md) still bind,
 because they are code facts rather than service ceremony: **read-only is enforced at the tool layer,
@@ -74,7 +74,14 @@ becomes signal handling instead of `dispose()`. In-process children cost one thi
 lands in *our* process, so every slot call is wrapped and demoted to an outcome (§7) rather than
 allowed to reject the round.
 
-## 3. Panel config — `panel.yaml`, tracked, no secrets
+## 3. Panel config — `panel.yaml`, personal and untracked, no secrets
+
+`panel.yaml` is gitignored; `panel.yaml.example` is the tracked twin, and the first install step is
+copying one to the other. It holds no secrets — auth is the `agentDir` `auth.json` (§2) — but
+secret-free was never the test. The file names which models *this* install resolves and bills, and a
+`provider/id` is only as real as the reader's own `auth.json` and model registry: a tracked default
+panel is a list of slots that fail to resolve on someone else's machine, presented as if it were the
+project's configuration. Personal machine config gets an example, not a checked-in value.
 
 ```yaml
 panel:
@@ -84,7 +91,7 @@ panel:
     color: accent
     persona: ""            # optional system-prompt append; empty = model diversity only
   - name: gpt
-    model: openai/gpt-5.2
+    model: openai/gpt-5.2  # the example leaves this slot commented: ids differ per install
     thinking: high
     color: success
   - name: deepseek
@@ -520,7 +527,8 @@ session store.
 ```
 pi-discuss/
   docs/DESIGN.md      # this file
-  panel.yaml          # the default panel — tracked; holds no secrets (auth is agentDir auth.json)
+  panel.yaml.example  # the tracked twin — copy to panel.yaml on install (§3)
+  panel.yaml          # your live panel — gitignored, personal machine config, no secrets
   src/index.ts        # extension entry: command registration, session_start/shutdown hooks
   src/modules/        # config.ts, panelists.ts, rounds.ts, discussion.ts, artifacts.ts,
                       # cost.ts, research.ts, research-tools.ts, ui.ts, types.ts, prompts/
@@ -585,6 +593,7 @@ command and nothing yet runs it often enough to earn the coupling.
 | Synthesis ownership | The host session's model, not a panel slot (§2). |
 | Round 0 | Always independent, asserted by a guard — no peers AND no steering — rather than trusted to the prompt (§8.2). |
 | Cost policy | Soft cap + warning by default ($5); hard refusal only when `max_cost` is set explicitly. Gates `/pd-debate` and `/pd-ask` alike (§8.5). Covers model **and** search spend, and carries across a resume via `meta.yaml`'s per-round `research_cost`. |
+| Panel config | `panel.yaml` is gitignored personal config; `panel.yaml.example` is the tracked twin (§3). Reversed 2026-08-27 from "tracked, no `.example` twin": holding no secrets was the wrong test — the slots name models only *this* install resolves and pays for. |
 | Repo access | `repo_access: true` by default, per-discussion `/pd --no-repo` override (§3). |
 | Web research | Exa, off by default, key in pi's `auth.json` under `exa` — never in this repo. Search spend folds into the §8.5 cap from Exa's own `costDollars` (§5.1). |
 | Command prefix | `/pd-*`, locked — pi auto-suffixes collisions, so the risk is cosmetic (§4). |
