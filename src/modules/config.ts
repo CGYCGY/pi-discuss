@@ -199,7 +199,10 @@ export function loadPanelConfig(path: string): PanelConfig {
   try {
     text = readFileSync(path, "utf8");
   } catch (err) {
-    throw new ConfigError(`cannot read panel config at ${path}: ${(err as Error).message}`);
+    throw new ConfigError(
+      `cannot read panel config at ${path}: ${(err as Error).message}\n` +
+        "panel.yaml is personal and untracked — copy panel.yaml.example next to it and edit the slots.",
+    );
   }
   let raw: unknown;
   try {

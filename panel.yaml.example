@@ -1,0 +1,21 @@
+panel:
+  - name: claude
+    model: anthropic/claude-fable-5
+    thinking: high
+    color: accent
+    persona: ""            # optional system-prompt append; empty = model diversity only
+  # Add a third slot here. `model` is a `provider/id` your own pi resolves — the ids
+  # differ per install, so check pi's `/model` picker rather than copying one from here.
+  # - name: gpt
+  #   model: <provider>/<id>
+  #   thinking: high
+  #   color: success
+  - name: deepseek
+    model: deepseek/deepseek-v4
+    thinking: medium
+    color: warning
+defaults:
+  rounds: 2                # debate rounds after the independent round
+  repo_access: true        # panelists may read the cwd repo
+  research: false          # web_search / fetch_url via Exa; needs an "exa" key in pi's auth.json
+  max_cost:                # unset ⇒ soft cap + warning; set ⇒ hard refusal (§8.5)

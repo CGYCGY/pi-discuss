@@ -2,6 +2,10 @@ node_modules/
 *.log
 logs/
 
+# The live panel is personal machine config — which models this install resolves and
+# pays for. panel.yaml.example is the tracked twin.
+panel.yaml
+
 # Discussion artifacts are written into the *user's* cwd at runtime; ignore any
 # that land here from a local run.
 discussions/

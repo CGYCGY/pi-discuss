@@ -63,7 +63,8 @@ import {
   showFooter,
 } from "./modules/ui.ts";
 
-/** panel.yaml sits beside the extension source (§16); it holds no secrets, so it is tracked. */
+/** panel.yaml sits beside the extension source (§16); it is personal and untracked, so a
+ *  fresh clone has only panel.yaml.example and must be copied into place first. */
 const PANEL_CONFIG_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "..", "panel.yaml");
 
 const SYNTHESIS_MESSAGE_TYPE = "pi-discuss.synthesis-request";

@@ -110,9 +110,9 @@ describe("parsePanelConfig", () => {
     expect(() => parsePanelConfig(panelYaml(TWO_SLOTS, "  max_cost: 0"))).toThrow(/max_cost must be a positive number/);
   });
 
-  test("the shipped panel.yaml parses", () => {
-    const config = loadPanelConfig(new URL("../panel.yaml", import.meta.url).pathname);
-    expect(config.slots.map((s) => s.name)).toEqual(["claude", "gpt", "deepseek"]);
+  test("the shipped panel.yaml.example parses", () => {
+    const config = loadPanelConfig(new URL("../panel.yaml.example", import.meta.url).pathname);
+    expect(config.slots.map((s) => s.name)).toEqual(["claude", "deepseek"]);
     expect(config.defaults.maxCost).toBeUndefined();
   });
 });
