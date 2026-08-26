@@ -12,7 +12,7 @@
 > Status: **BUILT — all three §18 stages, research included** (2026-08-26). Targets
 > `@earendil-works/pi-coding-agent` `^0.84.3` — the ModelRuntime API generation (`AuthStorage` left
 > the exports in 0.80.8). Sections below describe what the code does; §15's first-run verification
-> list is still unexercised against a live provider.
+> list ran green against live providers on 2026-08-27 and is now automated as `bun run smoke:rpc`.
 
 ## 1. Problem & goal — betting on one model inherits its blind spots
 
@@ -443,9 +443,13 @@ Each panelist's answer renders as a labeled, colored block as it completes (para
 sequential display), plus a one-line footer widget (`slot · model · tokens · cost`).
 
 **Rendering goes through `pi.appendEntry(customType, data)` + `pi.registerEntryRenderer(customType,
-…)`.** That path renders the block *and* persists it in the host session's JSONL **without entering
-the moderator's LLM context** — the property that makes the panel affordable, since five models' full
+…)`.** That path renders the block *and* records it in the host session **without entering the
+moderator's LLM context** — the property that makes the panel affordable, since five models' full
 answers across three rounds would otherwise flood the moderator's window before synthesis ever runs.
+*Recorded, not necessarily on disk:* pi's `SessionManager` withholds the session file until the session
+holds an assistant message, and a panel that never reaches `/pd-synthesize` gives the moderator no turn
+to produce one — so those entries live only in memory for the session's lifetime (§15). Nothing rests
+on it: `discussions/` is the durable record (§10), written by our own writer.
 `pi.sendMessage({ display: true })` **does** enter context, and is reserved for the single deliberate
 injection in `/pd-synthesize` (§11). Renderers use `Box`/`Text`/`Markdown`/`VStack` from `pi-tui` with
 `getMarkdownTheme()`, and `theme.fg(slot.color, slot.name)` for the label (§3).
@@ -470,13 +474,21 @@ the artifact writer, and the prompt builders without a network, a model runtime,
 `SessionManager.inMemory()` plus `exportToJsonl` remains available for fixtures if a test ever needs a
 real transcript.
 
-**First-run verification list** — in the spirit of
-[`../../docs/pi-0.84-upgrade-checks.md`](../../docs/pi-0.84-upgrade-checks.md), these paths compile but
-have never executed against a live provider. Check them here before debugging from scratch:
+**First-run verification list — automated by `bun run smoke:rpc`.** In the spirit of
+[`../../docs/pi-0.84-upgrade-checks.md`](../../docs/pi-0.84-upgrade-checks.md), these paths compile
+without ever having executed against a live provider. The list stays here as the **spec of what the
+harness covers**; `smoke/` (§16) is the executable form. It is opt-in and paid — never reachable from
+`bun run test` — and drives a real `pi --mode rpc` process with a scratch cwd, a scratch
+`--session-dir`, and a generated two-slot panel pinned to the cheapest available `anthropic` and
+`deepseek` models under a `max_cost` of $0.50. Each check prints PASS / FAIL / SKIP with its evidence
+and the run exits nonzero on any FAIL.
 
 1. `SessionManager.open()` against a **non-existent** path actually creating the file.
 2. Resume restoring a slot's transcript intact from its `sessions/<slot>.jsonl`.
 3. `appendEntry` + `registerEntryRenderer` surviving a session reload (renderer re-registration order).
+   The harness covers the durable half — no `extension_error` on reload, entries round-trip through
+   `get_entries`. That the re-registered renderer still *paints* needs a terminal, and is left to a
+   planned `smoke:tui`.
 4. `/pd-abort` mid-round: signal → `session.abort()` → outcomes recorded, no orphaned turn.
 5. Concurrent dispatch across **different providers** on one shared `ModelRuntime`.
 6. `session_shutdown` with `reason: "new"` arriving mid-round, and the disposed latch stopping the loop
@@ -484,6 +496,24 @@ have never executed against a live provider. Check them here before debugging fr
 7. A real Exa call: that `readStoredCredential("exa")` finds a key pi's `/login` wrote, that
    `costDollars.total` is present on both `/search` and `/contents`, and that a panelist's custom tool
    is actually callable — i.e. that naming it in `tools` alongside `customTools` was sufficient (§5.1).
+
+**First live run: 2026-08-27** — all seven green, ~$0.05. No code defect surfaced. What it *did*
+surface is one pi behaviour the list had assumed away, in two places: **`SessionManager` does not write
+a session file until that session holds an assistant message** (`_persist` buffers everything until
+then and flushes in one rewrite).
+
+- A slot's `sessions/<slot>.jsonl` therefore appears on its **first assistant reply**, not at
+  `open()` — measured 5–8s after the round-0 dispatch. `open()` reserves the path; the round writes it.
+  A round that produces no assistant output for a slot leaves that slot no transcript at all, which is
+  the honest outcome but is not what "open() creates the file" implies.
+- The **host** session is never persisted by `appendEntry` alone, because the moderator takes no turn
+  of its own until `/pd-synthesize` (§14). Check 3 has to spend one cheap moderator turn to flush the
+  file before a reload can test anything — without it, `switch_session` loads an empty session and both
+  checks 3 and 6 pass vacuously. This is the correction to §14's "renders *and* persists".
+
+Both are properties of pi, not defects here, and neither changes the design: the artifacts under
+`discussions/` are the durable record (§10), and they are written by our own writer, not by pi's
+session store.
 
 ## 16. Repo layout
 
@@ -497,6 +527,7 @@ pi-discuss/
   src/modules/prompts/  # round-0.ts, debate.ts, synthesis.ts, persona.ts, steer.ts, ask.ts,
                         # panelist-system.ts
   test/               # deterministic, zero paid calls (§15)
+  smoke/              # rpc.ts + rpc-client.ts + scratch.ts — the paid §15 runner, `bun run smoke:rpc`
   discussions/        # the artifacts (§10)
 ```
 
@@ -504,7 +535,8 @@ pi-discuss/
 them without a value-level import cycle. `discussion.ts` holds the active-discussion state and the
 guards that read it — the drift guard (§8.4) and the debate loop's steering-consumption order (§6.1).
 `panel.yaml` is resolved from the extension's own directory via `import.meta.url`; there is no cwd
-override. `research.ts` is the credential/HTTP/ledger layer and `research-tools.ts` the `defineTool`
+override — which is why `smoke/` pins a scratch panel by copying the extension tree beside a generated
+one rather than by pointing the running extension at another file. `research.ts` is the credential/HTTP/ledger layer and `research-tools.ts` the `defineTool`
 wrappers over it — split so the backend seam tests without pulling in TypeBox or a tool runtime (§15).
 
 Install for use: add `pi-discuss/src/index.ts` to pi's extension sources in `settings.json`, or symlink
