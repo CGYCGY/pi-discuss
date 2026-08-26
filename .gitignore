@@ -6,6 +6,9 @@ logs/
 # that land here from a local run.
 discussions/
 
+# Live smoke runs stage a scratch pi workspace here (kept only on failure).
+.smoke/
+
 # TypeScript build artifacts (we run noEmit, but just in case)
 *.tsbuildinfo
 dist/

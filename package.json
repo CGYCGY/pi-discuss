@@ -10,7 +10,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test test/"
+    "test": "bun test test/",
+    "smoke:rpc": "bun run smoke/rpc.ts"
   },
   "dependencies": {
     "typebox": "1.3.7",
