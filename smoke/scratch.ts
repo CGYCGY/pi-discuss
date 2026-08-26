@@ -52,6 +52,10 @@ export interface AvailableModel {
   cost?: ModelCost | null;
 }
 
+export function modelPrice(model: AvailableModel): number {
+  return (model.cost?.input ?? 0) + (model.cost?.output ?? 0);
+}
+
 /**
  * Cheapest by input+output price. Ties break on the shorter id, which picks the
  * undated `latest` alias over its pinned twin — the two are the same model at the
@@ -61,8 +65,8 @@ export function cheapestModel(models: AvailableModel[], provider: string): Avail
   const candidates = models.filter((m) => m.provider === provider && typeof m.cost?.input === "number");
   if (candidates.length === 0) return undefined;
   return candidates.sort((a, b) => {
-    const priceA = (a.cost?.input ?? 0) + (a.cost?.output ?? 0);
-    const priceB = (b.cost?.input ?? 0) + (b.cost?.output ?? 0);
+    const priceA = modelPrice(a);
+    const priceB = modelPrice(b);
     if (priceA !== priceB) return priceA - priceB;
     if (a.id.length !== b.id.length) return a.id.length - b.id.length;
     return a.id.localeCompare(b.id);
