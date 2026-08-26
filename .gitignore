@@ -1,0 +1,17 @@
+node_modules/
+*.log
+logs/
+
+# Discussion artifacts are written into the *user's* cwd at runtime; ignore any
+# that land here from a local run.
+discussions/
+
+# TypeScript build artifacts (we run noEmit, but just in case)
+*.tsbuildinfo
+dist/
+
+# Editor / OS noise
+.DS_Store
+*.swp
+.idea/
+.vscode/
