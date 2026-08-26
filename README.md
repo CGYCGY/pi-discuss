@@ -106,7 +106,19 @@ It drives a real `pi --mode rpc` process over JSONL with a scratch working direc
 
 **Cost:** about **$0.05 per run** — two cheap models, one short question, two rounds cut short on purpose, one `/pd-ask`, and one research round. `bun run test` never invokes it, and nothing in CI should.
 
-The scratch workspace under `.smoke/` is deleted on a green run and kept for inspection on a failure, or always with `SMOKE_KEEP=1`.
+There is one thing RPC still cannot see — a paint. It has a free companion:
+
+```bash
+bun run smoke:tui
+```
+
+RPC proves the panelist entries *survive* a session reload, but not that they still **render** — pi drops a custom entry with no registered renderer silently, so a lost renderer and a healthy one look identical over RPC. This runner drives a real `pi` TUI inside a herdr pane and reads the painted screen back: both panelist blocks and the notice repaint from the reloaded transcript, each slot label in its own colour with the outcome badge in the error colour, `/pd-resume` painting into the already-reloaded session, and the `belowEditor` footer widget carrying live slot state. See [`docs/DESIGN.md`](docs/DESIGN.md) §15.
+
+**Prerequisites:** a running herdr server (`herdr status`), `pi` on `PATH`, and at least one provider with configured auth. Any of those missing prints SKIP and exits 0 — it is a companion check, not a gate.
+
+**Cost:** **free.** The discussion is a fixture written straight to disk and no panelist is ever prompted; the only live dependency is model *resolution*, so `/pd-resume`'s readiness guard has something to resolve.
+
+Either runner's scratch workspace under `.smoke/` is deleted on a green run and kept for inspection on a failure, or always with `SMOKE_KEEP=1`.
 
 Install for use: add `pi-discuss/src/index.ts` to pi's extension sources in `settings.json`, or symlink it into `~/.pi/agent/extensions/`.
 
@@ -114,7 +126,7 @@ Install for use: add `pi-discuss/src/index.ts` to pi's extension sources in `set
 
 Built — core loop, discussion mechanics, and research tools. Targets `@earendil-works/pi-coding-agent` `^0.84.3`. Tests are deterministic and make zero paid calls: they stub at the `PanelistSession` seam for the round loop and at the `ResearchBackend` seam for search, both structural subsets of the real thing, so the compiler still checks that a real session and a real backend satisfy them.
 
-`docs/DESIGN.md` §15 lists the first-run verification paths that only exist against a live provider. All seven ran green on 2026-08-27 and are now automated as `bun run smoke:rpc` (above) — check there before debugging a first-run failure from scratch.
+`docs/DESIGN.md` §15 lists the first-run verification paths that only exist against a live provider. All seven ran green on 2026-08-27 and are now automated as `bun run smoke:rpc` (above), with the rendered-output half green the same day under `bun run smoke:tui` — check there before debugging a first-run failure from scratch.
 
 ## License
 

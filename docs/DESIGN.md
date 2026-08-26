@@ -493,9 +493,9 @@ and the run exits nonzero on any FAIL.
 1. `SessionManager.open()` against a **non-existent** path actually creating the file.
 2. Resume restoring a slot's transcript intact from its `sessions/<slot>.jsonl`.
 3. `appendEntry` + `registerEntryRenderer` surviving a session reload (renderer re-registration order).
-   The harness covers the durable half — no `extension_error` on reload, entries round-trip through
-   `get_entries`. That the re-registered renderer still *paints* needs a terminal, and is left to a
-   planned `smoke:tui`.
+   The RPC harness covers the durable half — no `extension_error` on reload, entries round-trip through
+   `get_entries`. That the re-registered renderer still *paints* needs a terminal, and is covered by
+   `bun run smoke:tui` below.
 4. `/pd-abort` mid-round: signal → `session.abort()` → outcomes recorded, no orphaned turn.
 5. Concurrent dispatch across **different providers** on one shared `ModelRuntime`.
 6. `session_shutdown` with `reason: "new"` arriving mid-round, and the disposed latch stopping the loop
@@ -522,6 +522,31 @@ Both are properties of pi, not defects here, and neither changes the design: the
 `discussions/` are the durable record (§10), and they are written by our own writer, not by pi's
 session store.
 
+**The rendered half — `bun run smoke:tui`.** RPC cannot see a paint, and the failure it would miss is
+silent: pi's `addCustomEntryToChat` returns early for a `customType` with no registered renderer, so a
+renderer that failed to re-register leaves `get_entries` intact and the transcript **blank**. A
+companion runner drives a real `pi` TUI inside a herdr pane (herdr is the terminal multiplexer already
+on this machine; it exposes panes over a socket API) — `pane run`, then `wait-output` / `read` against
+the rendered screen — and asserts four things a terminal is the only witness to:
+
+1. Both panelist blocks and the notice repaint from the reloaded JSONL, collapsed past
+   `COLLAPSED_LINES`, with no raw entry text and no extension error (§15/3's visual half).
+2. Each slot label comes back in its own configured colour and a non-`answered` slot in the error
+   colour — the JSONL round-trip hazard `isThemeColor()` guards, which would otherwise flatten every
+   slot to the same fallback token (§14).
+3. `/pd-resume <dir>` paints its notice **into the already-reloaded session**, covering the live half a
+   replay of the JSONL cannot (§15/3).
+4. The `belowEditor` footer widget carries the discussion name, both slots' state, and token counts read
+   back from the restored transcripts — a widget RPC mode never builds at all, since `showFooter` is
+   gated on `ctx.mode === "tui"` (§14).
+
+It is **free**: the discussion is a fixture written to disk through the product's own artifact writers
+plus two `SessionManager` transcripts, and no slot is ever prompted. Its one live dependency is model
+*resolution* — the panel is pinned to models pi reports as available, so `/pd-resume`'s readiness guard
+(§8.1) passes. It SKIPs with exit 0, not FAIL, when the `herdr` binary is missing, its server is not
+running, `pi` is not on `PATH`, or no provider has configured auth. **First green run: 2026-08-27**, all
+four, $0.00. Note that `/pd-resume` opens an argument-completion popup that consumes the first `Enter`.
+
 ## 16. Repo layout
 
 ```
@@ -536,6 +561,7 @@ pi-discuss/
                         # panelist-system.ts
   test/               # deterministic, zero paid calls (§15)
   smoke/              # rpc.ts + rpc-client.ts + scratch.ts — the paid §15 runner, `bun run smoke:rpc`
+                      # tui.ts + herdr.ts — its free rendered-output twin, `bun run smoke:tui`
   discussions/        # the artifacts (§10)
 ```
 
