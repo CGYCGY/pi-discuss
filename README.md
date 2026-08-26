@@ -50,7 +50,16 @@ Typical flow: `/pd` → read round 0 → `/pd-steer` or `/pd-ask` → `/pd-debat
 
 Off by default. With `research: true` in [`panel.yaml`](panel.yaml) — or `/pd --research <topic>` for one discussion — each panelist gets two extra tools, `web_search` and `fetch_url`, both wrapping [Exa](https://exa.ai). Search results come back with the page text inline, so a panelist can check a claim and quote the source in the same call rather than arguing from memory.
 
-Store the key in pi, under the provider id `exa` in the same `auth.json` that holds your model keys — or export `EXA_API_KEY`. It is read on every call, so a key added mid-session works without restarting the panel. **Nothing goes in this repo.**
+**The key never goes in this repo** — there is no `auth.json` here and no `.example` twin to fill in. It lives in pi's own credential store, `~/.pi/agent/auth.json`, alongside your model keys, under the provider id `exa`:
+
+```jsonc
+{
+  "anthropic":  { "type": "api_key", "key": "…" },
+  "exa":        { "type": "api_key", "key": "your-exa-key" }
+}
+```
+
+The `key` may instead be the *name* of an environment variable holding the value. `EXA_API_KEY` in the environment takes precedence over the stored entry either way. The entry is re-read on every call, so a key added mid-session works without restarting the panel.
 
 Exa reports what it charged on every response, so search spend is metered rather than estimated: it counts toward `max_cost` like model spend, shows in the footer as `(search $0.041)`, and is stamped per round into `meta.yaml` so resuming a discussion does not hand it a fresh budget. Without a key configured, `/pd --research` is refused up front rather than discovered mid-round by five panelists at once.
 
