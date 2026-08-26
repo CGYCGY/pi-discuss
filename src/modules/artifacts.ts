@@ -118,11 +118,13 @@ export function writeMeta(dir: string, meta: DiscussionMeta): void {
     topic: meta.topic,
     created: meta.createdAt,
     repo_access: meta.repoAccess,
+    research: meta.research,
     panel: meta.panel.map((s) => ({ name: s.name, model: s.model, thinking: s.thinking })),
     rounds: meta.rounds.map((r) => ({
       round: r.round,
       started: r.startedAt,
       ...(r.steer === undefined ? {} : { steer: r.steer }),
+      ...(r.researchCost === undefined ? {} : { research_cost: r.researchCost }),
       slots: r.answers.map((a) => ({
         name: a.slot,
         outcome: a.outcome,
@@ -174,10 +176,12 @@ export function readMeta(dir: string): DiscussionMeta {
     const r = asRecord(entry, `rounds[${i}]`);
     const slotsRaw = Array.isArray(r["slots"]) ? r["slots"] : [];
     const steer = r["steer"];
+    const researchCost = r["research_cost"];
     return {
       round: Number(r["round"] ?? i),
       startedAt: String(r["started"] ?? ""),
       ...(typeof steer === "string" ? { steer } : {}),
+      ...(typeof researchCost === "number" ? { researchCost } : {}),
       answers: slotsRaw.map((slotEntry, j) => {
         const a = asRecord(slotEntry, `rounds[${i}].slots[${j}]`);
         const error = a["error"];
@@ -197,6 +201,8 @@ export function readMeta(dir: string): DiscussionMeta {
     topic: String(doc["topic"] ?? ""),
     createdAt: String(doc["created"] ?? ""),
     repoAccess: doc["repo_access"] !== false,
+    // Absent in a pre-research meta.yaml, where the discussion by definition had none.
+    research: doc["research"] === true,
     panel,
     rounds,
   };

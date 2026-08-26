@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { disposePanelists, PANELIST_TOOLS } from "../src/modules/panelists.ts";
+import { disposePanelists, PANELIST_TOOLS, RESEARCH_TOOLS } from "../src/modules/panelists.ts";
+import { FETCH_TOOL_NAME, SEARCH_TOOL_NAME } from "../src/modules/research.ts";
 import { panelist } from "./helpers.ts";
 
 describe("panelist tool surface (§5)", () => {
@@ -7,6 +8,16 @@ describe("panelist tool surface (§5)", () => {
     expect([...PANELIST_TOOLS]).toEqual(["read", "grep", "find", "ls"]);
     for (const denied of ["write", "edit", "bash", "powershell"]) {
       expect(PANELIST_TOOLS as readonly string[]).not.toContain(denied);
+    }
+  });
+
+  test("the research names match the tools that get registered, or the allowlist silences them", () => {
+    expect([...RESEARCH_TOOLS]).toEqual([SEARCH_TOOL_NAME, FETCH_TOOL_NAME]);
+  });
+
+  test("research is not part of the base allowlist, so a plain panel has no network", () => {
+    for (const name of RESEARCH_TOOLS) {
+      expect(PANELIST_TOOLS as readonly string[]).not.toContain(name);
     }
   });
 });

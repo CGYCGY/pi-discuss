@@ -12,9 +12,17 @@ export interface StatsSource {
 }
 
 export interface CostSnapshot {
+  /** Model spend plus research spend — what the §8.5 guard rules on. */
   totalCost: number;
   totalTokens: number;
   perSlot: Map<string, SlotStats>;
+  /** Search-provider spend, which getSessionStats() cannot see. Already inside totalCost. */
+  researchCost: number;
+}
+
+/** Structural subset of ResearchLedger, so cost stays free of the research module. */
+export interface ResearchSpendSource {
+  total(): { costUsd: number };
 }
 
 /**
@@ -22,7 +30,10 @@ export interface CostSnapshot {
  * history, so it reflects what was actually billed rather than what is still in
  * the context window.
  */
-export function aggregateCost(slots: Array<{ name: string; session: StatsSource }>): CostSnapshot {
+export function aggregateCost(
+  slots: Array<{ name: string; session: StatsSource }>,
+  research?: ResearchSpendSource,
+): CostSnapshot {
   const perSlot = new Map<string, SlotStats>();
   let totalCost = 0;
   let totalTokens = 0;
@@ -38,7 +49,10 @@ export function aggregateCost(slots: Array<{ name: string; session: StatsSource 
     totalCost += stats.cost;
     totalTokens += stats.tokens.total;
   }
-  return { totalCost, totalTokens, perSlot };
+  // Folded into totalCost rather than reported alongside it: a cap that ignored
+  // search spend would let a research-heavy panel run past the number the user set.
+  const researchCost = research?.total().costUsd ?? 0;
+  return { totalCost: totalCost + researchCost, totalTokens, perSlot, researchCost };
 }
 
 export type CostRuling =

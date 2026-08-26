@@ -19,6 +19,8 @@ export interface SlotConfig {
 export interface PanelDefaults {
   rounds: number;
   repoAccess: boolean;
+  /** Off by default: it spends money outside the model ledger and needs a key pi may not hold (§20). */
+  research: boolean;
   /** Unset makes the cost guard a soft cap; set makes it a hard refusal (§8.5). */
   maxCost?: number;
 }
@@ -132,7 +134,7 @@ function parseSlot(raw: unknown, index: number): SlotConfig {
 }
 
 function parseDefaults(raw: unknown): PanelDefaults {
-  if (raw === undefined || raw === null) return { rounds: 2, repoAccess: true };
+  if (raw === undefined || raw === null) return { rounds: 2, repoAccess: true, research: false };
   if (!isRecord(raw)) throw new ConfigError("defaults must be a mapping");
 
   const rawRounds = raw["rounds"] ?? 2;
@@ -145,6 +147,11 @@ function parseDefaults(raw: unknown): PanelDefaults {
     throw new ConfigError(`defaults.repo_access must be a boolean (got ${JSON.stringify(rawRepo)})`);
   }
 
+  const rawResearch = raw["research"] ?? false;
+  if (typeof rawResearch !== "boolean") {
+    throw new ConfigError(`defaults.research must be a boolean (got ${JSON.stringify(rawResearch)})`);
+  }
+
   const rawMax = raw["max_cost"];
   let maxCost: number | undefined;
   if (rawMax !== undefined && rawMax !== null) {
@@ -154,7 +161,12 @@ function parseDefaults(raw: unknown): PanelDefaults {
     maxCost = rawMax;
   }
 
-  return { rounds: rawRounds, repoAccess: rawRepo, ...(maxCost === undefined ? {} : { maxCost }) };
+  return {
+    rounds: rawRounds,
+    repoAccess: rawRepo,
+    research: rawResearch,
+    ...(maxCost === undefined ? {} : { maxCost }),
+  };
 }
 
 export function parsePanelConfig(raw: unknown): PanelConfig {

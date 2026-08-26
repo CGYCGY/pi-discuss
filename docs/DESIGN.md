@@ -9,10 +9,10 @@
 > `pi-deployment-manager` and `pi-pages`: it borrows their tool-layer discipline but is **not** an RPC
 > agent (§2). Read alongside [`../../docs/building-pi-agents.md`](../../docs/building-pi-agents.md).
 >
-> Status: **BUILT through §18's "Core loop" and "Discussion mechanics"; research tools deferred**
-> (2026-08-26). Targets `@earendil-works/pi-coding-agent` `^0.84.3` — the ModelRuntime API generation
-> (`AuthStorage` left the exports in 0.80.8). Sections below describe what the code does; §15's
-> first-run verification list is still unexercised against a live provider.
+> Status: **BUILT — all three §18 stages, research included** (2026-08-26). Targets
+> `@earendil-works/pi-coding-agent` `^0.84.3` — the ModelRuntime API generation (`AuthStorage` left
+> the exports in 0.80.8). Sections below describe what the code does; §15's first-run verification
+> list is still unexercised against a live provider.
 
 ## 1. Problem & goal — betting on one model inherits its blind spots
 
@@ -94,6 +94,7 @@ panel:
 defaults:
   rounds: 2                # debate rounds after the independent round
   repo_access: true        # panelists may read the cwd repo
+  research: false          # web_search / fetch_url via Exa; needs an "exa" key in pi's auth.json
   max_cost:                # unset ⇒ soft cap + warning; set ⇒ hard refusal (§8.5)
 ```
 
@@ -110,6 +111,9 @@ defaults:
   diversity first, role diversity as a deliberate config choice.
 - **`repo_access`** — default `true`; drives `noContextFiles` on the panelist loader (§5), overridable
   per discussion with `/pd --no-repo`.
+- **`research`** — default `false`; adds the Exa-backed `web_search` / `fetch_url` tools (§5.1),
+  overridable per discussion with `/pd --research` / `/pd --no-research`. Still secret-free: the key
+  lives in pi's `auth.json`, never here.
 
 Dropped from the fusion-harness model-stack this descends from: architect/primary role flags. The
 moderator is the host session, not a slot.
@@ -118,7 +122,7 @@ moderator is the host session, not a slot.
 
 | command | r/w | does |
 |---|---|---|
-| `/pd [--no-repo] <topic>` | write | create `discussions/<date>-<slug>/`, boot the slot sessions, run **round 0** — every panelist answers independently, zero cross-contamination |
+| `/pd [--no-repo] [--research\|--no-research] <topic>` | write | create `discussions/<date>-<slug>/`, boot the slot sessions, run **round 0** — every panelist answers independently, zero cross-contamination |
 | `/pd-debate [n]` | write | run `n` debate rounds (default `defaults.rounds`); each panelist receives the others' **labeled** positions from the previous round and may revise or hold |
 | `/pd-steer <text>` | write | inject verbatim steering into every panelist's next round ("focus on cost, ignore latency") |
 | `/pd-ask <slot> <q>` | write | press one panelist directly, its session context intact |
@@ -153,7 +157,7 @@ rather than a correctness risk — `/pd-*` is locked.
 | capability | scope |
 |---|---|
 | **read** | `tools: ["read", "grep", "find", "ls"]` — the allowlist mechanically excludes `write`/`edit`/`bash`/`powershell`. Repo context files load only when `repo_access: true`. |
-| **network** | none in the core loop. The deferred research stage (§20) adds `fetch_url` / `web_search` as `defineTool` custom tools, **named explicitly** in `tools` (an allowlist does not auto-include custom tools). |
+| **network** | none unless `research` is on, which adds `web_search` / `fetch_url` as `defineTool` custom tools, **named explicitly** in `tools` — an allowlist does not auto-include custom tools, so registering them without naming them would hand every panelist a tool it is forbidden to call. Both wrap Exa; a panelist gets no raw HTTP (§5.1). |
 | **write** | none, ever. Only the extension's artifact writer touches disk. |
 | **denied** | `write`, `edit`, `bash`, `powershell`; and via the loader: extensions, skills, prompt templates, themes. |
 
@@ -170,6 +174,39 @@ field-proven precedent is `createWarmJudge` in
 loader shape; pi-discuss diverges from it in exactly three places — a persistent `SessionManager`
 instead of `inMemory()` (§10), the read-only tool allowlist above, and `noContextFiles: false` when
 `repo_access` is on.
+
+### 5.1 Web research — Exa, wrapped, metered
+
+**Off by default** (`defaults.research: false`), because it spends money outside the model ledger and
+needs a credential pi may not hold. `/pd --research` and `/pd --no-research` override per discussion;
+the choice is recorded in `meta.yaml` so a resume restores the same capability set.
+
+**Backend: Exa** (`POST https://api.exa.ai/search`, `/contents`), chosen over prime-agent's Serper for
+three reasons that are properties of the API, not preferences:
+
+1. `contents` returns page text **inline with the search**, so one credential and one round-trip cover
+   both `web_search` and `fetch_url`. Serper returns snippets and would need a separate fetcher.
+2. The response carries **`costDollars`**, so §8.5 meters what was actually charged rather than an
+   estimate. This is what makes search spend governable at all.
+3. A key was already provisioned for it.
+
+**The credential never enters this repo.** It lives in pi's own `auth.json` under the provider id
+`exa`, read through `readStoredCredential` — the same store already holding the model keys — with
+`EXA_API_KEY` taking precedence when set. It is read **on every call**, not cached at boot, so a key
+added mid-session works without restarting the panel (prime-agent's rationale for the same pattern).
+A stored value may be a literal or the *name* of an env var; a `!command` ref is resolved by pi at
+login time and reads as absent here rather than as a broken key.
+
+**Failure is a lost source, not a lost turn.** A 429, an unreachable host, unreadable JSON — all come
+back to the panelist as explanatory text (§7's "record the non-answer" applied at the tool layer). Two
+exceptions: a caller abort propagates so `/pd-abort` still ends the turn (§12), and a *missing key* is
+refused at `/pd` time by the §8.1 readiness guard rather than discovered mid-round by five panelists
+at once. Exa reports per-URL fetch failures out-of-band in `statuses`; those are surfaced as labelled
+"Not retrieved" hits, so a page that 404s is visible rather than silently absent.
+
+**Clamped, not trusted.** `num_results` ≤ 10, `max_characters` ≤ 10,000 (Exa's own ceiling), fetch
+batches ≤ 5 URLs with the dropped tail named in the result. A panelist that asks for 100 full pages
+would otherwise bury its own context before it answered.
 
 ## 6. Round lifecycle — dispatch → concurrency → timeout → capture → finish
 
@@ -388,6 +425,13 @@ after a compaction, rendered as `—` and never as zero. `meta.yaml` is the dura
 per slot: outcome, tokens, cost, plus the panel snapshot), and the §8.5 cost guard reads it from the
 same place the display does.
 
+**Search spend is tracked separately and then folded in.** `getSessionStats()` cannot see it — Exa
+bills it, not the model provider — so `ResearchLedger` accumulates each call's reported `costDollars`
+per slot, `aggregateCost` adds the total into `totalCost` (what the cap rules on), and the footer
+breaks it out as `(search $0.041)` because it is the one number a user cannot derive from token
+counts. Each round stamps its own delta into `meta.yaml` as `research_cost`, and `/pd-resume` seeds
+the ledger from those — without that, every resume would hand the discussion a fresh budget.
+
 **What a wedged round looks like:** the footer holds one slot at "running" past its budget while the
 others read "done". That is the signal to `/pd-abort` — the round timeout fires on its own too, but
 the footer is what makes a stall distinguishable from a slow model, which is the whole reason it
@@ -437,6 +481,9 @@ have never executed against a live provider. Check them here before debugging fr
 5. Concurrent dispatch across **different providers** on one shared `ModelRuntime`.
 6. `session_shutdown` with `reason: "new"` arriving mid-round, and the disposed latch stopping the loop
    between awaits.
+7. A real Exa call: that `readStoredCredential("exa")` finds a key pi's `/login` wrote, that
+   `costDollars.total` is present on both `/search` and `/contents`, and that a panelist's custom tool
+   is actually callable — i.e. that naming it in `tools` alongside `customTools` was sufficient (§5.1).
 
 ## 16. Repo layout
 
@@ -446,7 +493,7 @@ pi-discuss/
   panel.yaml          # the default panel — tracked; holds no secrets (auth is agentDir auth.json)
   src/index.ts        # extension entry: command registration, session_start/shutdown hooks
   src/modules/        # config.ts, panelists.ts, rounds.ts, discussion.ts, artifacts.ts,
-                      # cost.ts, ui.ts, types.ts, prompts/
+                      # cost.ts, research.ts, research-tools.ts, ui.ts, types.ts, prompts/
   src/modules/prompts/  # round-0.ts, debate.ts, synthesis.ts, persona.ts, steer.ts, ask.ts,
                         # panelist-system.ts
   test/               # deterministic, zero paid calls (§15)
@@ -457,7 +504,8 @@ pi-discuss/
 them without a value-level import cycle. `discussion.ts` holds the active-discussion state and the
 guards that read it — the drift guard (§8.4) and the debate loop's steering-consumption order (§6.1).
 `panel.yaml` is resolved from the extension's own directory via `import.meta.url`; there is no cwd
-override.
+override. `research.ts` is the credential/HTTP/ledger layer and `research-tools.ts` the `defineTool`
+wrappers over it — split so the backend seam tests without pulling in TypeBox or a tool runtime (§15).
 
 Install for use: add `pi-discuss/src/index.ts` to pi's extension sources in `settings.json`, or symlink
 it into `~/.pi/agent/extensions/`.
@@ -482,9 +530,11 @@ in-process and their answers persisted and rendered without entering the moderat
 `meta.yaml` outcome + cost ledger. *Proves:* labeled cross-exposure moves positions in a way synthesis
 can attribute, and a discussion survives a session restart.
 
-**Research tools** — `fetch_url` / `web_search` as wrapped custom tools (backend still open, §21);
-footer polish; optional pi-pages publish of a finished discussion. *Proves:* panelists can bring in
-evidence neither model had memorized, without touching a shell.
+**Research tools** — `web_search` / `fetch_url` as Exa-backed wrapped custom tools, the search-spend
+ledger folded into the §8.5 cap, footer polish. *Proves:* panelists can bring in evidence neither model
+had memorized, without touching a shell and without a credential entering the repo. Publishing a
+finished discussion through pi-pages stayed out (§20): the manual `deploy-pages` handoff is one
+command and nothing yet runs it often enough to earn the coupling.
 
 ## 19. Locked decisions at a glance
 
@@ -502,8 +552,9 @@ evidence neither model had memorized, without touching a shell.
 | Artifact location | `discussions/<date>-<slug>/` in the cwd, sessions inside it; never `/tmp` (§10). |
 | Synthesis ownership | The host session's model, not a panel slot (§2). |
 | Round 0 | Always independent, asserted by a guard — no peers AND no steering — rather than trusted to the prompt (§8.2). |
-| Cost policy | Soft cap + warning by default ($5); hard refusal only when `max_cost` is set explicitly. Gates `/pd-debate` and `/pd-ask` alike (§8.5). |
+| Cost policy | Soft cap + warning by default ($5); hard refusal only when `max_cost` is set explicitly. Gates `/pd-debate` and `/pd-ask` alike (§8.5). Covers model **and** search spend, and carries across a resume via `meta.yaml`'s per-round `research_cost`. |
 | Repo access | `repo_access: true` by default, per-discussion `/pd --no-repo` override (§3). |
+| Web research | Exa, off by default, key in pi's `auth.json` under `exa` — never in this repo. Search spend folds into the §8.5 cap from Exa's own `costDollars` (§5.1). |
 | Command prefix | `/pd-*`, locked — pi auto-suffixes collisions, so the risk is cosmetic (§4). |
 | Discussion lifetime | One open at a time; `/pd-close` ends it without ending the session, leaving it resumable (§4). |
 | Panel drift | Slot set, model, **and thinking level** must match the `meta.yaml` snapshot to resume (§8.4). |
@@ -511,6 +562,8 @@ evidence neither model had memorized, without touching a shell.
 
 ## 20. Deferred
 
+- **Publishing a discussion from inside pi-discuss.** *Revisit when* the manual `deploy-pages` handoff
+  is being run on most discussions.
 - **Dedicated synthesizer slot** (a different model than the host); config key reserved. *Revisit when*
   a synthesis is observed favoring the moderator model's own round position.
 - **RPC exposure** — a `convene` verb so fleet agents can commission a panel. It would then be a gated
@@ -520,19 +573,21 @@ evidence neither model had memorized, without touching a shell.
   spotting a stalled slot (§13).
 - **Interactive model picker** (`/pd-model`). *Revisit when* editing `panel.yaml` between discussions
   becomes the common case rather than the rare one.
-- **Publishing a discussion from inside pi-discuss.** *Revisit when* the manual `deploy-pages` handoff
-  is being run on most discussions.
 
 ## 21. Open questions
 
-Settled items are not listed here — they live in the sections above.
+Settled items live in the sections above; one is kept struck-through here because the *reason* it was
+open was itself a mistake worth not repeating.
 
-- **Web research backend** (blocks the research-tools stage, §18). Start `fetch_url`-only — the
-  panelist supplies URLs, the tool fetches and strips — or wire a real search API and accept the
-  key/quota surface? `fetch_url`-only is testable offline and adds no credential to a repo that
-  currently has none, but it also cannot discover anything the model didn't already know a URL for,
-  which is most of the value. Undecided.
+- ~~**Web research backend.**~~ **Settled 2026-08-26: Exa** (§5.1). The framing was wrong — the choice
+  was never "credential vs. no credential", because pi's `auth.json` already holds the model keys and
+  takes an arbitrary provider id, so a search key never had to touch this repo at all. Given that, the
+  `fetch_url`-only option bought nothing and cost the discovery that is most of the value. Exa over
+  Serper because `contents` comes back inline with the search (one tool covers both halves) and
+  `costDollars` makes the spend meterable.
 - **Synthesis context budget.** A 5-slot × 3-round discussion pushes fifteen full answers through
   `sendMessage` into the moderator's window in one turn. Whether synthesis is fed full text, per-round
   slot summaries, or a two-pass reduce is unknown until real rounds exist to measure — and summarizing
-  is exactly the "averaging into mush" that §9 forbids, so it cannot be chosen casually.
+  is exactly the "averaging into mush" that §9 forbids, so it cannot be chosen casually. Research
+  widens this: a panelist that quotes three fetched pages produces a materially longer answer than one
+  reasoning from memory, so the first live research discussion is also the measurement for this.

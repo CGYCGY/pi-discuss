@@ -19,6 +19,7 @@ const SAVED: DiscussionMeta = {
   topic: "t",
   createdAt: "2026-08-26T10:00:00.000Z",
   repoAccess: true,
+    research: false,
   panel: [
     { name: "claude", model: "anthropic/claude-fable-5", thinking: "high" },
     { name: "gpt", model: "openai/gpt-5.2", thinking: "high" },
@@ -79,7 +80,7 @@ describe("round bookkeeping", () => {
     return newDiscussion({
       dir,
       meta,
-      panel: { slots: CURRENT, defaults: { rounds: 2, repoAccess: true } },
+      panel: { slots: CURRENT, defaults: { rounds: 2, repoAccess: true, research: false } },
       panelists: [panelist("claude"), panelist("gpt")],
     });
   }
@@ -124,7 +125,7 @@ describe("debateLoop steering consumption", () => {
     const discussion: Discussion = newDiscussion({
       dir: "/tmp/not-written",
       meta: { ...SAVED, rounds: [] },
-      panel: { slots: CURRENT, defaults: { rounds: 2, repoAccess: true } },
+      panel: { slots: CURRENT, defaults: { rounds: 2, repoAccess: true, research: false } },
       panelists: [],
     });
     if (pendingSteer !== undefined) discussion.pendingSteer = pendingSteer;

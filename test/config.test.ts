@@ -37,7 +37,7 @@ describe("parsePanelConfig", () => {
       persona: "",
     });
     expect(config.slots[1]!.thinking).toBe("medium");
-    expect(config.defaults).toEqual({ rounds: 2, repoAccess: true });
+    expect(config.defaults).toEqual({ rounds: 2, repoAccess: true, research: false });
   });
 
   test("refuses a panel of one", () => {
@@ -89,7 +89,16 @@ describe("parsePanelConfig", () => {
     const config = parsePanelConfig(
       panelYaml(TWO_SLOTS, ["  rounds: 3", "  repo_access: false", "  max_cost: 2.5"].join("\n")),
     );
-    expect(config.defaults).toEqual({ rounds: 3, repoAccess: false, maxCost: 2.5 });
+    expect(config.defaults).toEqual({ rounds: 3, repoAccess: false, research: false, maxCost: 2.5 });
+  });
+
+  test("research defaults off and is read when set", () => {
+    expect(parsePanelConfig(panelYaml(TWO_SLOTS)).defaults.research).toBe(false);
+    expect(parsePanelConfig(panelYaml(TWO_SLOTS, "  research: true")).defaults.research).toBe(true);
+  });
+
+  test("refuses a non-boolean research flag", () => {
+    expect(() => parsePanelConfig(panelYaml(TWO_SLOTS, "  research: yes-please"))).toThrow(/must be a boolean/);
   });
 
   test("leaves max_cost unset when the key is present but empty", () => {

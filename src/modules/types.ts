@@ -20,6 +20,12 @@ export interface RoundRecord {
   /** The verbatim steering text that was in force for this round, if any. */
   steer?: string;
   answers: SlotAnswer[];
+  /**
+   * Search-provider spend during this round. Absent when the discussion ran
+   * without research, and stamped after the round so a resume can seed the
+   * ledger rather than restart the cost guard at zero (§8.5).
+   */
+  researchCost?: number;
 }
 
 export interface PanelSnapshotSlot {
@@ -32,6 +38,7 @@ export interface DiscussionMeta {
   topic: string;
   createdAt: string;
   repoAccess: boolean;
+  research: boolean;
   panel: PanelSnapshotSlot[];
   rounds: RoundRecord[];
 }

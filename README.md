@@ -34,7 +34,7 @@ Panel answers render and persist without entering the moderator's LLM context �
 
 | command | r/w | does |
 |---|---|---|
-| `/pd [--no-repo] <topic>` | write | create `discussions/<date>-<slug>/`, boot the slots, run **round 0** — every panelist answers independently, zero cross-contamination |
+| `/pd [--no-repo] [--research\|--no-research] <topic>` | write | create `discussions/<date>-<slug>/`, boot the slots, run **round 0** — every panelist answers independently, zero cross-contamination |
 | `/pd-debate [n]` | write | run `n` debate rounds; each panelist sees the others' **labeled** positions from the previous round and may revise or hold |
 | `/pd-steer <text>` | write | inject verbatim steering into every panelist's next round |
 | `/pd-ask <slot> <q>` | write | press one panelist directly, its session context intact — never added to the peer set |
@@ -45,6 +45,14 @@ Panel answers render and persist without entering the moderator's LLM context �
 | `/pd-close` | write | dispose the panel and clear the open discussion; artifacts stay on disk |
 
 Typical flow: `/pd` → read round 0 → `/pd-steer` or `/pd-ask` → `/pd-debate` → `/pd-synthesize`.
+
+## Web research (optional)
+
+Off by default. With `research: true` in [`panel.yaml`](panel.yaml) — or `/pd --research <topic>` for one discussion — each panelist gets two extra tools, `web_search` and `fetch_url`, both wrapping [Exa](https://exa.ai). Search results come back with the page text inline, so a panelist can check a claim and quote the source in the same call rather than arguing from memory.
+
+Store the key in pi, under the provider id `exa` in the same `auth.json` that holds your model keys — or export `EXA_API_KEY`. It is read on every call, so a key added mid-session works without restarting the panel. **Nothing goes in this repo.**
+
+Exa reports what it charged on every response, so search spend is metered rather than estimated: it counts toward `max_cost` like model spend, shows in the footer as `(search $0.041)`, and is stamped per round into `meta.yaml` so resuming a discussion does not hand it a fresh budget. Without a key configured, `/pd --research` is refused up front rather than discovered mid-round by five panelists at once.
 
 ## Artifacts are the product
 
@@ -70,13 +78,13 @@ bun run typecheck
 bun test test/
 ```
 
-No config secrets: auth comes from the normal `agentDir` `auth.json` that `ModelRuntime` already reads, so [`panel.yaml`](panel.yaml) is tracked with no `.example` twin. Edit it to pick your slots — 2–5 of them, each `name` / `model` / `thinking` / `color`, plus an optional `persona`.
+No config secrets: auth — model keys and the optional Exa key alike — comes from the normal `agentDir` `auth.json` that pi already reads, so [`panel.yaml`](panel.yaml) is tracked with no `.example` twin. Edit it to pick your slots — 2–5 of them, each `name` / `model` / `thinking` / `color`, plus an optional `persona`.
 
 Install for use: add `pi-discuss/src/index.ts` to pi's extension sources in `settings.json`, or symlink it into `~/.pi/agent/extensions/`.
 
 ## Status
 
-Built through the core loop and discussion mechanics; the research-tool stage is deferred. Targets `@earendil-works/pi-coding-agent` `^0.84.3`. Tests are deterministic and make zero paid calls — they stub at the `PanelistSession` seam, a structural subset of `AgentSession`, so the compiler still checks that a real session satisfies it.
+Built — core loop, discussion mechanics, and research tools. Targets `@earendil-works/pi-coding-agent` `^0.84.3`. Tests are deterministic and make zero paid calls: they stub at the `PanelistSession` seam for the round loop and at the `ResearchBackend` seam for search, both structural subsets of the real thing, so the compiler still checks that a real session and a real backend satisfy them.
 
 `docs/DESIGN.md` §15 lists the first-run verification paths that compile but have never executed against a live provider — check there before debugging a first-run failure from scratch.
 

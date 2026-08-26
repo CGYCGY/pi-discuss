@@ -1,9 +1,38 @@
 import { describe, expect, test } from "bun:test";
 import { aggregateCost, checkCostGuard, DEFAULT_SOFT_CAP_USD } from "../src/modules/cost.ts";
+import { ResearchLedger } from "../src/modules/research.ts";
 
 function source(cost: number, tokens: number) {
   return { getSessionStats: () => ({ cost, tokens: { total: tokens } }) };
 }
+
+describe("aggregateCost with research spend (§8.5)", () => {
+  test("search spend lands inside totalCost, so the cap cannot be walked past on searches", () => {
+    const ledger = new ResearchLedger();
+    ledger.record("a", 0.02);
+    ledger.record("b", 0.03);
+
+    const snapshot = aggregateCost([{ name: "a", session: source(0.25, 1000) }], ledger);
+
+    expect(snapshot.researchCost).toBeCloseTo(0.05, 6);
+    expect(snapshot.totalCost).toBeCloseTo(0.3, 6);
+    // Per-slot stays model-only: it mirrors what getSessionStats() reported.
+    expect(snapshot.perSlot.get("a")).toEqual({ cost: 0.25, tokens: { total: 1000 } });
+  });
+
+  test("no ledger is zero research spend, not an absent field", () => {
+    const snapshot = aggregateCost([{ name: "a", session: source(0.25, 1000) }]);
+    expect(snapshot.researchCost).toBe(0);
+    expect(snapshot.totalCost).toBeCloseTo(0.25, 6);
+  });
+
+  test("a research-only overrun still trips the guard", () => {
+    const ledger = new ResearchLedger();
+    ledger.record("a", 3);
+    const snapshot = aggregateCost([{ name: "a", session: source(0, 0) }], ledger);
+    expect(checkCostGuard(snapshot.totalCost, 2).action).toBe("refuse");
+  });
+});
 
 describe("aggregateCost", () => {
   test("sums per-slot stats across the panel", () => {

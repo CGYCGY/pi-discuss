@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildDebatePrompt } from "../src/modules/prompts/debate.ts";
+import { buildPanelistSystem } from "../src/modules/prompts/panelist-system.ts";
 import { buildPersonaAppend } from "../src/modules/prompts/persona.ts";
 import { buildRound0Prompt } from "../src/modules/prompts/round-0.ts";
 import { renderSteer, STEER_HEADING } from "../src/modules/prompts/steer.ts";
@@ -114,5 +115,30 @@ describe("synthesis (§9: attributed disagreement, missing slots reported)", () 
       rounds: [{ round: 0, startedAt: "", answers: [PEERS[0]!] }],
     });
     expect(clean).toContain("Every panelist answered every round.");
+  });
+});
+
+describe("panelist system prompt (§5: the stated inventory tracks the allowlist)", () => {
+  const plain = buildPanelistSystem({ research: false });
+  const researching = buildPanelistSystem({ research: true });
+
+  test("without research it claims no tool beyond reading, so a panelist does not invent one", () => {
+    expect(plain).toContain("file reading and search tools and nothing else");
+    expect(plain).not.toContain("web_search");
+    expect(plain).not.toContain("fetch_url");
+  });
+
+  test("with research it names the tools it actually has", () => {
+    expect(researching).toContain("web_search");
+    expect(researching).toContain("fetch_url");
+    expect(researching).toContain("Cite the URL");
+  });
+
+  test("both stay read-only and keep the anti-hedging clause (§9, §17)", () => {
+    for (const text of [plain, researching]) {
+      expect(text).toContain("You are read-only");
+      expect(text).toContain("cannot run commands, edit");
+      expect(text).toContain("hedges toward the middle");
+    }
   });
 });

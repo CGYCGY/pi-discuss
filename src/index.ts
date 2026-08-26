@@ -40,6 +40,14 @@ import {
   previousAnswers,
 } from "./modules/discussion.ts";
 import { createPanelist, disposePanelists, type Panelist, type PanelistModel } from "./modules/panelists.ts";
+import {
+  createExaBackend,
+  EXA_ENV_VAR,
+  EXA_PROVIDER_ID,
+  type ResearchBackend,
+  ResearchLedger,
+  resolveExaKey,
+} from "./modules/research.ts";
 import { buildSynthesisPrompt } from "./modules/prompts/synthesis.ts";
 import { askPanelist, finishRound, runRound, type RoundSpec } from "./modules/rounds.ts";
 import { type DiscussionMeta, type RoundRecord, type SlotAnswer, snapshotPanel } from "./modules/types.ts";
@@ -95,16 +103,35 @@ function formatTokens(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }
 
+export interface OpenArgs {
+  noRepo: boolean;
+  /** Undefined leaves panel.yaml's default in force; a flag overrides it either way. */
+  research?: boolean;
+  topic: string;
+}
+
 /**
- * `--no-repo` only counts as its own whole token. A prefix match would read
+ * A flag only counts as its own whole leading token. A prefix match would read
  * `/pd --no-repository access tradeoffs` as the flag plus a mangled topic, and
  * silently drop the panel's repo access along the way.
+ *
+ * Flags are consumed only from the front and in any order, so a `--research` that
+ * appears mid-topic stays topic text.
  */
-export function parseOpenArgs(args: string): { noRepo: boolean; topic: string } {
-  const trimmed = args.trim();
-  const flag = /^--no-repo(?=\s|$)\s*/.exec(trimmed);
-  if (flag === null) return { noRepo: false, topic: trimmed };
-  return { noRepo: true, topic: trimmed.slice(flag[0].length).trim() };
+export function parseOpenArgs(args: string): OpenArgs {
+  let rest = args.trim();
+  let noRepo = false;
+  let research: boolean | undefined;
+
+  for (;;) {
+    const flag = /^(--no-repo|--research|--no-research)(?=\s|$)\s*/.exec(rest);
+    if (flag === null) break;
+    if (flag[1] === "--no-repo") noRepo = true;
+    else research = flag[1] === "--research";
+    rest = rest.slice(flag[0].length);
+  }
+
+  return { noRepo, ...(research === undefined ? {} : { research }), topic: rest.trim() };
 }
 
 export default function piDiscuss(pi: ExtensionAPI): void {
@@ -113,6 +140,10 @@ export default function piDiscuss(pi: ExtensionAPI): void {
   let active: Discussion | undefined;
   let runtime: ModelRuntime | undefined;
   const slotState = new Map<string, SlotState>();
+  // One ledger per open discussion; the guard rules on this discussion's spend,
+  // not on everything the session has ever searched.
+  let researchLedger = new ResearchLedger();
+  let researchBackend: ResearchBackend | undefined;
   let currentRound: number | undefined;
   // Synchronous, so a second submission cannot slip past the `active` check
   // during the many awaits before `active` is assigned. Command handlers do
@@ -216,6 +247,30 @@ export default function piDiscuss(pi: ExtensionAPI): void {
     return { runtime: mr, models: readiness.models };
   }
 
+  /**
+   * §8.1 extended to the search key: refuse at open time rather than let every
+   * panelist discover mid-round that research is dead. Research is opt-in, so a
+   * silent downgrade to an unresearched panel would be the wrong default.
+   */
+  function guardedResearch(ctx: ExtensionCommandContext, wanted: boolean): ResearchBackend | undefined | "refused" {
+    if (!wanted) return undefined;
+    if (resolveExaKey() === undefined) {
+      refuse(
+        ctx,
+        "pi-discuss: web research is on but no Exa key is configured",
+        [
+          `Store an Exa API key in pi under the provider id \`${EXA_PROVIDER_ID}\`, or export \`${EXA_ENV_VAR}\`.`,
+          "Get one at https://exa.ai.",
+          "",
+          "Run `/pd --no-research <topic>` to convene without it, or set `defaults.research: false` in panel.yaml.",
+        ].join("\n"),
+      );
+      return "refused";
+    }
+    researchBackend ??= createExaBackend();
+    return researchBackend;
+  }
+
   async function bootPanelists(args: {
     panel: PanelConfig;
     models: Map<string, PanelistModel>;
@@ -223,6 +278,7 @@ export default function piDiscuss(pi: ExtensionAPI): void {
     cwd: string;
     dir: string;
     repoAccess: boolean;
+    research: ResearchBackend | undefined;
   }): Promise<Panelist[]> {
     const panelists: Panelist[] = [];
     try {
@@ -235,6 +291,9 @@ export default function piDiscuss(pi: ExtensionAPI): void {
             cwd: args.cwd,
             sessionFile: sessionPath(args.dir, slot.name),
             repoAccess: args.repoAccess,
+            ...(args.research === undefined
+              ? {}
+              : { research: { backend: args.research, ledger: researchLedger } }),
           }),
         );
       }
@@ -246,14 +305,20 @@ export default function piDiscuss(pi: ExtensionAPI): void {
   }
 
   function footerLines(discussion: Discussion): string[] {
-    const snapshot = aggregateCost(discussion.panelists.map((p) => ({ name: p.slot.name, session: p.session })));
+    const snapshot = aggregateCost(
+      discussion.panelists.map((p) => ({ name: p.slot.name, session: p.session })),
+      researchLedger,
+    );
     const states = discussion.slots
       .map((s) => `${s.name}:${slotState.get(s.name) ?? "waiting"}`)
       .join(" ");
     const round = currentRound === undefined ? "idle" : `r${currentRound}`;
+    // Search spend is broken out because it is the one number the user cannot
+    // explain from token counts, and it is what makes a research panel expensive.
+    const search = snapshot.researchCost > 0 ? ` (search $${snapshot.researchCost.toFixed(3)})` : "";
     return [
       `pd ${discussion.dir.split("/").pop()} · ${round} · ${states} · ` +
-        `${formatTokens(snapshot.totalTokens)} tok · $${snapshot.totalCost.toFixed(3)}`,
+        `${formatTokens(snapshot.totalTokens)} tok · $${snapshot.totalCost.toFixed(3)}${search}`,
     ];
   }
 
@@ -300,6 +365,14 @@ export default function piDiscuss(pi: ExtensionAPI): void {
         onSlotStart: (slot) => slotState.set(slot.name, "running"),
         onSlotSettled: (answer) => slotState.set(answer.slot, answer.outcome === "answered" ? "done" : "failed"),
       });
+      // Stamped after the round rather than accumulated live: the ledger is
+      // per-call, and only the delta since the last committed round belongs to
+      // this one. meta.yaml is then the record a resume reads the guard back from.
+      if (discussion.meta.research) {
+        const recorded = discussion.meta.rounds.reduce((sum, r) => sum + (r.researchCost ?? 0), 0);
+        const spent = researchLedger.total().costUsd - recorded;
+        if (spent > 0) record.researchCost = spent;
+      }
       discussion.meta.rounds.push(record);
       await finishRound({
         record,
@@ -342,7 +415,10 @@ export default function piDiscuss(pi: ExtensionAPI): void {
 
   /** §8.5, consulted at a round boundary only. Returns false when the round must not start. */
   function costGate(ctx: ExtensionCommandContext, discussion: Discussion): boolean {
-    const snapshot = aggregateCost(discussion.panelists.map((p) => ({ name: p.slot.name, session: p.session })));
+    const snapshot = aggregateCost(
+      discussion.panelists.map((p) => ({ name: p.slot.name, session: p.session })),
+      researchLedger,
+    );
     const ruling = checkCostGuard(snapshot.totalCost, discussion.maxCost);
     if (ruling.action === "refuse") {
       refuse(ctx, "pi-discuss: cost limit reached", ruling.message);
@@ -389,7 +465,7 @@ export default function piDiscuss(pi: ExtensionAPI): void {
 
       const parsed = parseOpenArgs(args);
       if (parsed.topic.length === 0) {
-        refuse(ctx, "pi-discuss: usage", "`/pd [--no-repo] <topic>`");
+        refuse(ctx, "pi-discuss: usage", "`/pd [--no-repo] [--research|--no-research] <topic>`");
         return;
       }
       const topic = parsed.topic;
@@ -404,6 +480,13 @@ export default function piDiscuss(pi: ExtensionAPI): void {
 
         const now = new Date();
         const useRepo = parsed.noRepo ? false : panel.defaults.repoAccess;
+        const wantResearch = parsed.research ?? panel.defaults.research;
+        const backend = guardedResearch(ctx, wantResearch);
+        if (backend === "refused") return;
+        // A fresh discussion starts the search ledger at zero, matching the
+        // per-discussion cost guard it feeds.
+        researchLedger = new ResearchLedger();
+
         let dir: string;
         try {
           dir = createDiscussionDir(ctx.cwd, discussionDirName(now, slugify(topic)));
@@ -427,6 +510,7 @@ export default function piDiscuss(pi: ExtensionAPI): void {
             cwd: ctx.cwd,
             dir,
             repoAccess: useRepo,
+            research: backend,
           });
         } catch (err) {
           // Nothing but topic.md exists yet; removing it keeps the same topic
@@ -440,6 +524,7 @@ export default function piDiscuss(pi: ExtensionAPI): void {
           topic,
           createdAt: now.toISOString(),
           repoAccess: useRepo,
+          research: backend !== undefined,
           panel: snapshotPanel(panel.slots),
           rounds: [],
         };
@@ -691,7 +776,10 @@ export default function piDiscuss(pi: ExtensionAPI): void {
       }
 
       const discussion = active;
-      const snapshot = aggregateCost(discussion.panelists.map((p) => ({ name: p.slot.name, session: p.session })));
+      const snapshot = aggregateCost(
+        discussion.panelists.map((p) => ({ name: p.slot.name, session: p.session })),
+        researchLedger,
+      );
       const rows = discussion.slots.map((slot) => {
         const stats = snapshot.perSlot.get(slot.name);
         const state = slotState.get(slot.name) ?? "waiting";
@@ -713,7 +801,10 @@ export default function piDiscuss(pi: ExtensionAPI): void {
           "|---|---|---|---|---|---|",
           ...rows,
           "",
-          `Total: ${formatTokens(snapshot.totalTokens)} tokens · $${snapshot.totalCost.toFixed(4)}`,
+          `Total: ${formatTokens(snapshot.totalTokens)} tokens · $${snapshot.totalCost.toFixed(4)}` +
+            (snapshot.researchCost > 0
+              ? ` (models $${(snapshot.totalCost - snapshot.researchCost).toFixed(4)} + search $${snapshot.researchCost.toFixed(4)})`
+              : ""),
         ].join("\n"),
       );
     },
@@ -791,6 +882,13 @@ export default function piDiscuss(pi: ExtensionAPI): void {
         const resolved = await guardedModels(ctx, panel);
         if (resolved === undefined) return;
 
+        const backend = guardedResearch(ctx, meta.research);
+        if (backend === "refused") return;
+        // Prior rounds' search spend carries forward, or every resume would hand
+        // the discussion a fresh budget the user never granted (§8.5).
+        researchLedger = new ResearchLedger();
+        researchLedger.carry(meta.rounds.reduce((sum, r) => sum + (r.researchCost ?? 0), 0));
+
         // Boot the replacement BEFORE tearing down the incumbent: a failed boot
         // must leave whatever discussion is already open untouched, not destroy it
         // on the way to not opening a new one.
@@ -803,6 +901,7 @@ export default function piDiscuss(pi: ExtensionAPI): void {
             cwd: ctx.cwd,
             dir,
             repoAccess: meta.repoAccess,
+            research: backend,
           });
         } catch (err) {
           refuse(ctx, "pi-discuss: could not restore the panel", String(err));

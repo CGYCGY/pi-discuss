@@ -34,6 +34,7 @@ const META: DiscussionMeta = {
   topic: "should we ship it",
   createdAt: "2026-08-26T10:00:00.000Z",
   repoAccess: true,
+        research: false,
   panel: [
     { name: "claude", model: "anthropic/claude-fable-5", thinking: "high" },
     { name: "gpt", model: "openai/gpt-5.2", thinking: "medium" },

@@ -10,8 +10,10 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { SlotConfig } from "./config.ts";
 import type { SlotStats } from "./cost.ts";
-import { PANELIST_SYSTEM } from "./prompts/panelist-system.ts";
+import { buildPanelistSystem } from "./prompts/panelist-system.ts";
 import { buildPersonaAppend } from "./prompts/persona.ts";
+import { createResearchTools } from "./research-tools.ts";
+import { FETCH_TOOL_NAME, type ResearchBackend, type ResearchLedger, SEARCH_TOOL_NAME } from "./research.ts";
 
 export type PanelistModel = NonNullable<CreateAgentSessionOptions["model"]>;
 
@@ -35,10 +37,16 @@ export interface Panelist {
 
 /**
  * §5: read-only is enforced here, not in the prompt. The allowlist mechanically
- * excludes write/edit/bash/powershell, and custom tools are not auto-included by
- * an allowlist — a future research tool must be named explicitly.
+ * excludes write/edit/bash/powershell.
  */
 export const PANELIST_TOOLS = ["read", "grep", "find", "ls"] as const;
+
+/**
+ * Passing `tools` makes it the whole allowlist, and custom tools are *not*
+ * auto-included by one — registering the research tools without naming them here
+ * would hand every panelist a tool it is then forbidden to call.
+ */
+export const RESEARCH_TOOLS = [SEARCH_TOOL_NAME, FETCH_TOOL_NAME] as const;
 
 export interface CreatePanelistOptions {
   slot: SlotConfig;
@@ -48,6 +56,8 @@ export interface CreatePanelistOptions {
   /** Absolute path to `<discussion>/sessions/<slot>.jsonl`. */
   sessionFile: string;
   repoAccess: boolean;
+  /** Omitted when the discussion runs without web research (§20). */
+  research?: { backend: ResearchBackend; ledger: ResearchLedger };
   agentDir?: string;
 }
 
@@ -65,14 +75,18 @@ export interface CreatePanelistOptions {
  * discussion and a resume (§10).
  */
 export async function createPanelist(opts: CreatePanelistOptions): Promise<Panelist> {
-  const { slot, cwd, sessionFile, repoAccess } = opts;
+  const { slot, cwd, sessionFile, repoAccess, research } = opts;
   const agentDir = opts.agentDir ?? getAgentDir();
   const persona = buildPersonaAppend(slot.persona);
+  const researchTools =
+    research === undefined
+      ? []
+      : createResearchTools({ slot: slot.name, backend: research.backend, ledger: research.ledger });
 
   const resourceLoader = new DefaultResourceLoader({
     cwd,
     agentDir,
-    systemPrompt: PANELIST_SYSTEM,
+    systemPrompt: buildPanelistSystem({ research: research !== undefined }),
     ...(persona === undefined ? {} : { appendSystemPrompt: [persona] }),
     noExtensions: true,
     noSkills: true,
@@ -95,7 +109,8 @@ export async function createPanelist(opts: CreatePanelistOptions): Promise<Panel
     // header records process.cwd(), which is the pi process's directory rather
     // than the discussion's.
     sessionManager: SessionManager.open(sessionFile, undefined, cwd),
-    tools: [...PANELIST_TOOLS],
+    tools: [...PANELIST_TOOLS, ...(researchTools.length > 0 ? RESEARCH_TOOLS : [])],
+    customTools: researchTools,
   });
 
   // createAgentSession reports modelFallbackMessage only when it had to pick a
