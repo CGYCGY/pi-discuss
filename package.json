@@ -5,6 +5,9 @@
   "type": "module",
   "license": "MIT",
   "description": "A pi extension that convenes a panel of 2-5 agents on different frontier models: they answer independently, debate across rounds, and the host session synthesizes the divergence map.",
+  "engines": {
+    "bun": ">=1.4.0"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test test/"
@@ -16,7 +19,7 @@
     "@earendil-works/pi-coding-agent": "^0.84.3",
     "@earendil-works/pi-tui": "^0.84.3",
     "typebox": "1.3.7",
-    "@types/bun": "^1.3.14",
+    "@types/bun": "^1.4.0",
     "@types/node": "^22.10.0",
     "typescript": "^5.7.0"
   }
