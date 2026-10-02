@@ -238,8 +238,7 @@ The behavioral template is the 5-step intent lifecycle in
    compacts mid-flight on long turns). `expandPromptTemplates: false` is not optional: debate prompts
    embed other models' output, which routinely contains `/`-prefixed lines that would otherwise expand
    as templates. `prompt()` resolves after the run finishes *including retries*, so the
-   `agent_end`-vs-`agent_settled` trap in
-   [`../../docs/pi-0.84-upgrade-checks.md`](../../docs/pi-0.84-upgrade-checks.md) does **not** apply —
+   `agent_end`-vs-`agent_settled` trap (resolving on `agent_end` relays pre-retry text) does **not** apply —
    do not copy the RPC spokes' capture/resolve split here. The pre-prompt snapshot is what makes the
    `timed-out` capture honest: `getLastAssistantText()` falls back to the *previous* round's answer
    when an aborted turn produced nothing, and filing that as partial output would feed a stale
@@ -481,8 +480,7 @@ the artifact writer, and the prompt builders without a network, a model runtime,
 `SessionManager.inMemory()` plus `exportToJsonl` remains available for fixtures if a test ever needs a
 real transcript.
 
-**First-run verification list — automated by `bun run smoke:rpc`.** In the spirit of
-[`../../docs/pi-0.84-upgrade-checks.md`](../../docs/pi-0.84-upgrade-checks.md), these paths compile
+**First-run verification list — automated by `bun run smoke:rpc`.** These paths compile
 without ever having executed against a live provider. The list stays here as the **spec of what the
 harness covers**; `smoke/` (§16) is the executable form. It is opt-in and paid — never reachable from
 `bun run test` — and drives a real `pi --mode rpc` process with a scratch cwd, a scratch
