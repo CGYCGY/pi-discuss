@@ -15,12 +15,12 @@
     "smoke:tui": "bun run smoke/tui.ts"
   },
   "dependencies": {
-    "typebox": "1.3.7",
+    "typebox": "1.3.27",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.84.3",
-    "@earendil-works/pi-tui": "^0.84.3",
+    "@earendil-works/pi-coding-agent": "^1.0.0",
+    "@earendil-works/pi-tui": "^1.0.0",
     "@types/bun": "^1.4.0",
     "@types/node": "^22.10.0",
     "typescript": "^5.7.0"
