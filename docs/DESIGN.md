@@ -10,9 +10,10 @@
 > agent (§2). Read alongside [`../../docs/building-pi-agents.md`](../../docs/building-pi-agents.md).
 >
 > Status: **BUILT — all three §18 stages, research included** (2026-08-26). Targets
-> `@earendil-works/pi-coding-agent` `^0.84.3` — the ModelRuntime API generation (`AuthStorage` left
-> the exports in 0.80.8). Sections below describe what the code does; §15's first-run verification
-> list ran green against live providers on 2026-08-27 and is now automated as `bun run smoke:rpc`.
+> `@earendil-works/pi-coding-agent` `^1.0.0` — the ModelRuntime API generation (`AuthStorage` left
+> the exports in 0.80.8 and is still absent in 1.0.0). Sections below describe what the code does;
+> §15's first-run verification list ran green against live providers on 2026-08-27 (pi 0.84.3) and is
+> now automated as `bun run smoke:rpc`.
 
 ## 1. Problem & goal — betting on one model inherits its blind spots
 
@@ -234,8 +235,10 @@ The behavioral template is the 5-step intent lifecycle in
    [`../../pi-4b-tester/hub/verdict.ts`](../../pi-4b-tester/hub/verdict.ts)`:458-485`.
 4. **Capture** — snapshot `getLastAssistantText()` *before* prompting, then
    `await session.prompt(text, { expandPromptTemplates: false })`, then
-   `session.getLastAssistantText()`, then a belt-and-braces `await session.waitForIdle()` (0.84.3
-   compacts mid-flight on long turns). `expandPromptTemplates: false` is not optional: debate prompts
+   `session.getLastAssistantText()`, then a belt-and-braces `await session.waitForIdle()`. pi compacts
+   mid-flight on long turns; in 1.0.0's source `prompt()` awaits that compaction before resolving, but
+   its documented contract covers only retries, so the extra wait guards the gap and is normally a
+   no-op. `expandPromptTemplates: false` is not optional: debate prompts
    embed other models' output, which routinely contains `/`-prefixed lines that would otherwise expand
    as templates. `prompt()` resolves after the run finishes *including retries*, so the
    `agent_end`-vs-`agent_settled` trap (resolving on `agent_end` relays pre-retry text) does **not** apply —

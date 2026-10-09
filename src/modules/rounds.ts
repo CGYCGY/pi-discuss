@@ -109,9 +109,10 @@ function stub(headline: string, partial: string): string {
 }
 
 async function settle(session: PanelistSession): Promise<void> {
-  // waitForIdle is belt-and-braces after prompt() resolves (0.84.3 compacts
-  // mid-flight on long turns), but a wedged session must not hold the round open,
-  // so it gets a grace window rather than an unbounded await.
+  // pi compacts mid-flight on long turns. 1.0.0's prompt() awaits that before
+  // resolving, but its documented contract only covers retries, so waitForIdle
+  // guards the gap. A wedged session must not hold the round open, hence the
+  // grace window rather than an unbounded await.
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
