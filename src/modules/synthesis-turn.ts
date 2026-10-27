@@ -2,12 +2,20 @@
 export interface TranscriptMessage {
   role: string;
   content?: unknown;
+  stopReason?: unknown;
 }
 
+/**
+ * An aborted message (Esc mid-reply) ends the search with nothing: its partial text
+ * must never stand in for a finished synthesis, and an older message's text would
+ * be a different reply altogether.
+ */
 export function lastAssistantText(messages: readonly TranscriptMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
-    if (message === undefined || message.role !== "assistant" || !Array.isArray(message.content)) continue;
+    if (message === undefined || message.role !== "assistant") continue;
+    if (message.stopReason === "aborted") return "";
+    if (!Array.isArray(message.content)) continue;
     const text = message.content
       .map((part) =>
         typeof part === "object" && part !== null && (part as { type?: unknown }).type === "text"
@@ -27,6 +35,7 @@ export type SynthesisOutcome =
   | { kind: "not-started" }
   /** The session went busy but the run never settled: `_prepareRun` threw (pi reports it as an extension error on `send_message`). */
   | { kind: "failed-to-start" }
+  | { kind: "aborted" }
   | { kind: "empty" };
 
 /**
@@ -37,6 +46,7 @@ export type SynthesisOutcome =
 export class SynthesisCapture {
   private phase: "armed" | "capturing" | "settled" = "armed";
   private text = "";
+  private aborted = false;
 
   constructor(private readonly customType: string) {}
 
@@ -53,13 +63,15 @@ export class SynthesisCapture {
     if (text.length > 0) this.text = text;
   }
 
-  onAgentSettled(): void {
+  onAgentSettled(aborted: boolean): void {
     if (this.phase !== "capturing") return;
     this.phase = "settled";
+    this.aborted = aborted;
   }
 
   outcome(): SynthesisOutcome {
     if (this.phase !== "settled") return { kind: "failed-to-start" };
+    if (this.aborted) return { kind: "aborted" };
     if (this.text.length === 0) return { kind: "empty" };
     return { kind: "ok", text: this.text };
   }

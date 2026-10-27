@@ -86,6 +86,7 @@ const SYNTHESIS_REFUSALS: Record<Exclude<SynthesisOutcome["kind"], "ok">, string
   "not-started": "pi did not start a moderator turn for the synthesis request.",
   "failed-to-start":
     "The moderator's turn failed before it started (pre-run compaction or a before_agent_start step threw; pi logs it as an extension error on `send_message`).",
+  aborted: "The moderator's turn was aborted, so its partial reply is not a synthesis.",
   empty: "The moderator's turn produced no text.",
 };
 
@@ -178,8 +179,8 @@ export default function piDiscuss(pi: ExtensionAPI): void {
     synthesisCapture?.onAgentEnd(event.messages);
   });
 
-  pi.on("agent_settled", () => {
-    synthesisCapture?.onAgentSettled();
+  pi.on("agent_settled", (event) => {
+    synthesisCapture?.onAgentSettled(event.aborted);
   });
 
   /* ──────────────────────────── helpers ──────────────────────────── */
