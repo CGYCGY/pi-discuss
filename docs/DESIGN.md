@@ -380,9 +380,17 @@ pi.sendMessage (the one deliberate context injection) → moderator turn → wri
 idle check is a guard, not politeness: `sendMessage` into a streaming moderator **steers the running
 turn** instead of opening its own, which both derails that turn and leaves the capture reading someone
 else's reply. The capture is scoped to the turn the send triggers — armed just before the send, bound
-to the first `agent_start` that follows, released in a `finally`. If nothing is captured, `synthesis.md`
-is left **unchanged** and the refusal says so explicitly, because the moderator's reply may well have
-rendered in the transcript and been paid for.
+to the `before_agent_start` whose custom message is ours, closed at that run's `agent_settled`, released
+in a `finally`. There is no start timer: pi (≥1.2.0) marks the session busy synchronously inside
+`sendMessage`, so still-idle right after the send means no run started, and otherwise
+`ctx.waitForIdle()` covers however long the run takes to begin. If nothing is captured, or the run was
+aborted (its partial text is not a synthesis), `synthesis.md` is left **unchanged** and the refusal
+says so explicitly, because the moderator's reply may well have rendered in the transcript and been
+paid for.
+
+Since pi 1.2.0 that run is a full run like any prompt: pre-run compaction may fire first, every loaded
+extension's `before_agent_start` sees it (and may add messages or change the system prompt), and any
+pending `deliverAs: "nextTurn"` messages ride along with the synthesis request.
 
 **Resume** — `/pd-resume <dir>`: `[not mid-round] → read meta.yaml → [panel-drift guard] →
 SessionManager.open per slot → createAgentSession → close the incumbent → ready`.
@@ -557,7 +565,8 @@ pi-discuss/
   panel.yaml          # your live panel — gitignored, personal machine config, no secrets
   src/index.ts        # extension entry: command registration, session_start/shutdown hooks
   src/modules/        # config.ts, panelists.ts, rounds.ts, discussion.ts, artifacts.ts,
-                      # cost.ts, research.ts, research-tools.ts, ui.ts, types.ts, prompts/
+                      # cost.ts, research.ts, research-tools.ts, synthesis-turn.ts, ui.ts,
+                      # types.ts, prompts/
   src/modules/prompts/  # round-0.ts, debate.ts, synthesis.ts, persona.ts, steer.ts, ask.ts,
                         # panelist-system.ts
   test/               # deterministic, zero paid calls (§15)
@@ -573,6 +582,8 @@ guards that read it — the drift guard (§8.4) and the debate loop's steering-c
 override — which is why `smoke/` pins a scratch panel by copying the extension tree beside a generated
 one rather than by pointing the running extension at another file. `research.ts` is the credential/HTTP/ledger layer and `research-tools.ts` the `defineTool`
 wrappers over it — split so the backend seam tests without pulling in TypeBox or a tool runtime (§15).
+`synthesis-turn.ts` is `/pd-synthesize`'s run capture (§11), kept out of `index.ts` so it tests against
+fake pi events.
 
 Install for use: add `pi-discuss/src/index.ts` to pi's extension sources in `settings.json`, or symlink
 it into `~/.pi/agent/extensions/`.
@@ -612,7 +623,7 @@ command and nothing yet runs it often enough to earn the coupling.
 | Tool surface | `["read","grep","find","ls"]` — read-only by allowlist, not by prompt (§5). |
 | Session persistence | `SessionManager.open("<discussion>/sessions/<slot>.jsonl", undefined, cwd)` — one code path for create and resume (§10). |
 | Rendering path | `pi.appendEntry` + `registerEntryRenderer`: renders and persists, never enters moderator context (§14). |
-| Context injection | `pi.sendMessage` exactly once per synthesis, to feed the collected rounds to the moderator (§11). |
+| Context injection | `pi.sendMessage` exactly once per synthesis, to feed the collected rounds to the moderator (§11). The run it starts also carries whatever compaction, other extensions' `before_agent_start`, and pending `nextTurn` messages add. |
 | Prompts & personas | `systemPrompt` + `appendSystemPrompt` on the per-slot loader; prose lives in `src/modules/prompts/` (§9). |
 | Slot colors | Named `ThemeColor` tokens, never hex (§3). |
 | Cancellation | Extension-owned `AbortController` + `/pd-abort`; `ctx.signal` is undefined in idle-fired handlers (§12). |
