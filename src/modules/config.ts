@@ -57,7 +57,8 @@ const THINKING_LEVELS = [
  */
 const THEME_COLORS = [
   "accent", "border", "borderAccent", "borderMuted", "success", "error", "warning",
-  "muted", "dim", "text", "thinkingText", "searchMatchText", "userMessageText",
+  "muted", "dim", "text", "thinkingText", "scrollbarTrack", "scrollbarThumb",
+  "searchMatchText", "userMessageText",
   "customMessageText", "customMessageLabel", "toolTitle", "toolOutput", "mdHeading",
   "mdLink", "mdLinkUrl", "mdCode", "mdCodeBlock", "mdCodeBlockBorder", "mdQuote",
   "mdQuoteBorder", "mdHr", "mdListBullet", "toolDiffAdded", "toolDiffRemoved",
