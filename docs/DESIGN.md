@@ -93,7 +93,7 @@ panel:
     color: accent
     persona: ""            # optional system-prompt append; empty = model diversity only
   - name: gpt
-    model: openai/gpt-5.2  # the example leaves this slot commented: ids differ per install
+    model: openai/gpt-6.1-sol  # the example leaves this slot commented: ids differ per install
     thinking: high
     color: success
   - name: deepseek
