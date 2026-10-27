@@ -10,10 +10,11 @@
 > agent (§2). Read alongside [`../../docs/building-pi-agents.md`](../../docs/building-pi-agents.md).
 >
 > Status: **BUILT — all three §18 stages, research included** (2026-08-26). Targets
-> `@earendil-works/pi-coding-agent` `^1.0.0` — the ModelRuntime API generation (`AuthStorage` left
-> the exports in 0.80.8 and is still absent in 1.0.0). Sections below describe what the code does;
+> `@earendil-works/pi-coding-agent` `^1.4.0` — the ModelRuntime API generation (`AuthStorage` left
+> the exports in 0.80.8 and is still absent in 1.4.0). Sections below describe what the code does;
 > §15's first-run verification list ran green against live providers on 2026-08-27 (pi 0.84.3) and is
-> now automated as `bun run smoke:rpc`.
+> now automated as `bun run smoke:rpc`; that run has **not yet been repeated on 1.4.0** (typecheck and
+> `bun test` pass against 1.4.0 types).
 
 ## 1. Problem & goal — betting on one model inherits its blind spots
 
@@ -96,8 +97,8 @@ panel:
     thinking: high
     color: success
   - name: deepseek
-    model: deepseek/deepseek-v4
-    thinking: medium
+    model: deepseek/deepseek-v4-pro
+    thinking: high         # deepseek-v4-pro exposes only high/max
     color: warning
 defaults:
   rounds: 2                # debate rounds after the independent round
@@ -236,7 +237,7 @@ The behavioral template is the 5-step intent lifecycle in
 4. **Capture** — snapshot `getLastAssistantText()` *before* prompting, then
    `await session.prompt(text, { expandPromptTemplates: false })`, then
    `session.getLastAssistantText()`, then a belt-and-braces `await session.waitForIdle()`. pi compacts
-   mid-flight on long turns; in 1.0.0's source `prompt()` awaits that compaction before resolving, but
+   mid-flight on long turns; in 1.4.0's source `prompt()` awaits that compaction before resolving, but
    its documented contract covers only retries, so the extra wait guards the gap and is normally a
    no-op. `expandPromptTemplates: false` is not optional: debate prompts
    embed other models' output, which routinely contains `/`-prefixed lines that would otherwise expand

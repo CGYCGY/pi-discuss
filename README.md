@@ -124,9 +124,9 @@ Install for use: add `pi-discuss/src/index.ts` to pi's extension sources in `set
 
 ## Status
 
-Built — core loop, discussion mechanics, and research tools. Targets `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` `^1.0.0`. Tests are deterministic and make zero paid calls: they stub at the `PanelistSession` seam for the round loop and at the `ResearchBackend` seam for search, both structural subsets of the real thing, so the compiler still checks that a real session and a real backend satisfy them.
+Built — core loop, discussion mechanics, and research tools. Targets `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` `^1.4.0`. Tests are deterministic and make zero paid calls: they stub at the `PanelistSession` seam for the round loop and at the `ResearchBackend` seam for search, both structural subsets of the real thing, so the compiler still checks that a real session and a real backend satisfy them.
 
-`docs/DESIGN.md` §15 lists the first-run verification paths that only exist against a live provider. All seven ran green on 2026-08-27 (pi 0.84.3) and are now automated as `bun run smoke:rpc` (above), with the rendered-output half green the same day under `bun run smoke:tui` — check there before debugging a first-run failure from scratch.
+`docs/DESIGN.md` §15 lists the first-run verification paths that only exist against a live provider. All seven ran green on 2026-08-27 (pi 0.84.3) and are now automated as `bun run smoke:rpc` (above), with the rendered-output half green the same day under `bun run smoke:tui` — check there before debugging a first-run failure from scratch. Neither has been re-run on pi 1.4.0 yet; only typecheck and `bun test` are confirmed there.
 
 ## License
 
