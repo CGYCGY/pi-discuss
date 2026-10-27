@@ -19,8 +19,8 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^1.0.0",
-    "@earendil-works/pi-tui": "^1.0.0",
+    "@earendil-works/pi-coding-agent": "^1.4.0",
+    "@earendil-works/pi-tui": "^1.4.0",
     "@types/bun": "^1.4.0",
     "@types/node": "^22.10.0",
     "typescript": "^5.7.0"
