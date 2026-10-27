@@ -11,8 +11,8 @@ panel:
   #   thinking: high
   #   color: success
   - name: deepseek
-    model: deepseek/deepseek-v4
-    thinking: medium
+    model: deepseek/deepseek-v4-pro
+    thinking: high         # deepseek-v4-pro exposes only high/max
     color: warning
 defaults:
   rounds: 2                # debate rounds after the independent round
