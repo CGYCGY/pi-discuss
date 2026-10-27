@@ -288,7 +288,7 @@ async function phase1(scratch: Scratch): Promise<Phase1Outcome> {
           ...[...sighted].map(
             ([slot, s]) => `${slot}.jsonl: ${s.lines} entries, on disk ${s.atMs - roundStartedAtMs}ms after the round-0 dispatch`,
           ),
-          "the file materialises on the slot's first assistant message, not at open(): SessionManager defers the write, so a round that never produces assistant output leaves no transcript behind",
+          "the file materialises on the slot's first user or assistant message, not at open(): SessionManager defers the write until the session holds one",
         ],
       );
     }
@@ -383,9 +383,9 @@ async function phase1(scratch: Scratch): Promise<Phase1Outcome> {
     );
 
     /* ── checks 6 and 3: new_session mid-round, then reload the old session ── */
-    // pi defers creating the session file until the session holds an assistant
-    // message (SessionManager._persist), and a pi-discuss host session takes no
-    // turn of its own — appendEntry alone never flushes it. Without one cheap
+    // pi defers creating the session file until the session holds a user or
+    // assistant message (SessionManager._hasConversation), and a pi-discuss host
+    // session holds neither — appendEntry alone never flushes it. Without one cheap
     // moderator turn the file does not exist, switch_session loads an empty
     // session, and both checks below would measure nothing.
     const flushCursor = client.mark();
@@ -466,7 +466,7 @@ async function phase1(scratch: Scratch): Promise<Phase1Outcome> {
       [
         `${panelBeforeReload.length} panelist entries before the reload, ${panelAfterReload.length} after`,
         "renderers re-register on every session bind; an extension_error here would be the duplicate-registration failure",
-        "the host session only reaches disk once it holds an assistant message, so this check first spends one cheap moderator turn to flush it",
+        "the host session only reaches disk once it holds a user or assistant message, so this check first spends one cheap moderator turn to flush it",
         "the visual half — that the re-registered renderer still paints the block — is covered by `smoke:tui` (planned, not this script)",
       ],
     );

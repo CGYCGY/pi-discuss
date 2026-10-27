@@ -456,8 +456,9 @@ sequential display), plus a one-line footer widget (`slot · model · tokens · 
 moderator's LLM context** — the property that makes the panel affordable, since five models' full
 answers across three rounds would otherwise flood the moderator's window before synthesis ever runs.
 *Recorded, not necessarily on disk:* pi's `SessionManager` withholds the session file until the session
-holds an assistant message, and a panel that never reaches `/pd-synthesize` gives the moderator no turn
-to produce one — so those entries live only in memory for the session's lifetime (§15). Nothing rests
+holds a user or assistant message. `appendEntry` adds neither, nor does running a `/pd*` command, so a
+host session driven only by those commands, short of `/pd-synthesize`'s moderator turn, keeps these
+entries in memory for the session's lifetime (§15). Nothing rests
 on it: `discussions/` is the durable record (§10), written by our own writer.
 `pi.sendMessage({ display: true })` **does** enter context, and is reserved for the single deliberate
 injection in `/pd-synthesize` (§11). Renderers use `Box`/`Text`/`Markdown`/`VStack` from `pi-tui` with
@@ -507,15 +508,14 @@ and the run exits nonzero on any FAIL.
 
 **First live run: 2026-08-27** — all seven green, ~$0.05. No code defect surfaced. What it *did*
 surface is one pi behaviour the list had assumed away, in two places: **`SessionManager` does not write
-a session file until that session holds an assistant message** (`_persist` buffers everything until
-then and flushes in one rewrite).
+a session file until that session holds a user or assistant message** (`_persist` buffers everything
+until then and flushes in one rewrite; the rule is `_hasConversation`). Custom entries
+(`appendEntry`/`appendCustomEntry`) never count.
 
-- A slot's `sessions/<slot>.jsonl` therefore appears on its **first assistant reply**, not at
-  `open()` — measured 5–8s after the round-0 dispatch. `open()` reserves the path; the round writes it.
-  A round that produces no assistant output for a slot leaves that slot no transcript at all, which is
-  the honest outcome but is not what "open() creates the file" implies.
-- The **host** session is never persisted by `appendEntry` alone, because the moderator takes no turn
-  of its own until `/pd-synthesize` (§14). Check 3 has to spend one cheap moderator turn to flush the
+- A slot's `sessions/<slot>.jsonl` therefore appears on its **first prompt**, not at `open()` —
+  measured 5–8s after the round-0 dispatch. `open()` reserves the path; the round writes it.
+- The **host** session is never persisted by `appendEntry` alone: running `/pd*` commands adds no user
+  message, and the moderator takes no turn of its own until `/pd-synthesize` (§14). Check 3 has to spend one cheap moderator turn to flush the
   file before a reload can test anything — without it, `switch_session` loads an empty session and both
   checks 3 and 6 pass vacuously. This is the correction to §14's "renders *and* persists".
 

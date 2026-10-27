@@ -169,9 +169,9 @@ function buildDiscussion(scratch: Scratch, slots: SlotPick[]): string {
 }
 
 /**
- * SessionManager withholds the file until the session holds an assistant message
- * (DESIGN §15's live-run note) — a slot transcript of user turns alone never
- * reaches disk, and `/pd-resume` would then restore nothing.
+ * SessionManager withholds the file until the session holds a user or assistant
+ * message (DESIGN §15's live-run note); custom entries alone never reach disk, and
+ * `/pd-resume` would then restore nothing. One user turn is the minimum.
  */
 function writeSlotSession(path: string, cwd: string, slot: SlotPick): void {
   // open() rather than create(): it takes a path that does not exist yet, which
@@ -206,8 +206,9 @@ function longAnswer(): string {
 }
 
 /**
- * The host session as pi would have left it: one moderator turn (without which
- * nothing is on disk at all) followed by the entries `appendEntry` recorded.
+ * The host session as pi would have left it: one moderator turn (the host's only
+ * source of a user or assistant message, without which nothing is on disk at all)
+ * followed by the entries `appendEntry` recorded.
  */
 function buildHostSession(scratch: Scratch, slots: SlotPick[]): string {
   const sm = SessionManager.create(scratch.workDir, scratch.sessionDir);
