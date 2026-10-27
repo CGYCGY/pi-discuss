@@ -50,6 +50,7 @@ import {
 } from "./modules/research.ts";
 import { buildSynthesisPrompt } from "./modules/prompts/synthesis.ts";
 import { askPanelist, finishRound, runRound, type RoundSpec } from "./modules/rounds.ts";
+import { runSynthesisTurn, SynthesisCapture, type SynthesisOutcome } from "./modules/synthesis-turn.ts";
 import { type DiscussionMeta, type RoundRecord, type SlotAnswer, snapshotPanel } from "./modules/types.ts";
 import {
   hideFooter,
@@ -68,41 +69,25 @@ import {
 const PANEL_CONFIG_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "..", "panel.yaml");
 
 const SYNTHESIS_MESSAGE_TYPE = "pi-discuss.synthesis-request";
-const TURN_START_GRACE_MS = 10_000;
 
 type SlotState = "waiting" | "running" | "done" | "failed";
-
-interface SynthesisCapture {
-  phase: "awaiting-start" | "capturing";
-  text: string;
-  onStart?: () => void;
-}
 
 function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/** Structural, so the host-reply capture needs no type from the transitive agent-core package. */
-function lastAssistantText(messages: readonly { role: string; content?: unknown }[]): string {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i];
-    if (message === undefined || message.role !== "assistant" || !Array.isArray(message.content)) continue;
-    const text = message.content
-      .map((part) =>
-        typeof part === "object" && part !== null && (part as { type?: unknown }).type === "text"
-          ? String((part as { text?: unknown }).text ?? "")
-          : "",
-      )
-      .join("")
-      .trim();
-    if (text.length > 0) return text;
-  }
-  return "";
-}
-
 function formatTokens(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }
+
+const SYNTHESIS_REFUSALS: Record<Exclude<SynthesisOutcome["kind"], "ok">, string> = {
+  // Also what a send queued behind another turn's agent_settled handlers looks like:
+  // that turn may still start afterwards, uncaptured.
+  "not-started": "pi did not start a moderator turn for the synthesis request.",
+  "failed-to-start":
+    "The moderator's turn failed before it started (pre-run compaction or a before_agent_start step threw; pi logs it as an extension error on `send_message`).",
+  empty: "The moderator's turn produced no text.",
+};
 
 export interface OpenArgs {
   noRepo: boolean;
@@ -151,9 +136,7 @@ export default function piDiscuss(pi: ExtensionAPI): void {
   // genuinely re-enter: the interactive mode does not await onSubmit.
   let booting = false;
 
-  // Armed only across a single /pd-synthesize send. Scoped to the turn that send
-  // triggers: without that, an unrelated turn's reply would be captured and
-  // written to synthesis.md.
+  // Armed only across a single /pd-synthesize send.
   let synthesisCapture: SynthesisCapture | undefined;
 
   registerPanelistRenderer(pi);
@@ -187,19 +170,16 @@ export default function piDiscuss(pi: ExtensionAPI): void {
     lastCtx = undefined;
   });
 
-  pi.on("agent_start", () => {
-    // /pd-synthesize only sends while the moderator is idle, so the first turn to
-    // start after the send is ours.
-    if (synthesisCapture?.phase !== "awaiting-start") return;
-    synthesisCapture.phase = "capturing";
-    synthesisCapture.onStart?.();
+  pi.on("before_agent_start", (event) => {
+    synthesisCapture?.onBeforeAgentStart(event);
   });
 
   pi.on("agent_end", (event) => {
-    // Retries fire agent_end more than once; the last one before idle wins.
-    if (synthesisCapture?.phase !== "capturing") return;
-    const text = lastAssistantText(event.messages);
-    if (text.length > 0) synthesisCapture.text = text;
+    synthesisCapture?.onAgentEnd(event.messages);
+  });
+
+  pi.on("agent_settled", () => {
+    synthesisCapture?.onAgentSettled();
   });
 
   /* ──────────────────────────── helpers ──────────────────────────── */
@@ -699,35 +679,32 @@ export default function piDiscuss(pi: ExtensionAPI): void {
         rounds: hydratedRounds(discussion),
       });
 
-      const capture: SynthesisCapture = { phase: "awaiting-start", text: "" };
-      const started = new Promise<void>((resolveStarted) => {
-        capture.onStart = resolveStarted;
-      });
+      const capture = new SynthesisCapture(SYNTHESIS_MESSAGE_TYPE);
       synthesisCapture = capture;
+      let outcome: SynthesisOutcome;
       try {
-        // The one deliberate context injection (§14): appendEntry renders without
-        // entering the moderator's window, so the rounds have to arrive this way
-        // for the moderator to be able to read them at all.
-        pi.sendMessage(
-          { customType: SYNTHESIS_MESSAGE_TYPE, content: prompt, display: true },
-          { triggerTurn: true },
-        );
-        await Promise.race([started, delay(TURN_START_GRACE_MS)]);
-        if (capture.phase === "capturing") await ctx.waitForIdle();
+        outcome = await runSynthesisTurn(capture, {
+          // The one deliberate context injection (§14): appendEntry renders without
+          // entering the moderator's window, so the rounds have to arrive this way
+          // for the moderator to be able to read them at all.
+          send: () =>
+            pi.sendMessage(
+              { customType: SYNTHESIS_MESSAGE_TYPE, content: prompt, display: true },
+              { triggerTurn: true },
+            ),
+          isIdle: () => ctx.isIdle(),
+          waitForIdle: () => ctx.waitForIdle(),
+        });
       } finally {
         synthesisCapture = undefined;
       }
 
-      if (capture.text.length === 0) {
-        const why =
-          capture.phase === "awaiting-start"
-            ? `The moderator's turn did not start within ${TURN_START_GRACE_MS / 1000}s.`
-            : "The moderator's turn produced no text.";
+      if (outcome.kind !== "ok") {
         refuse(
           ctx,
           "pi-discuss: synthesis was NOT written",
           [
-            why,
+            SYNTHESIS_REFUSALS[outcome.kind],
             "",
             "If a synthesis appears in the transcript above, it was still paid for but did not reach disk —",
             "`synthesis.md` is unchanged. The rounds are intact, so re-running `/pd-synthesize` once the",
@@ -737,7 +714,7 @@ export default function piDiscuss(pi: ExtensionAPI): void {
         return;
       }
 
-      writeSynthesis(discussion.dir, capture.text, new Date());
+      writeSynthesis(discussion.dir, outcome.text, new Date());
       notice(pi, "pi-discuss: synthesis written", `\`${join(discussion.dir, "synthesis.md")}\``);
     },
   });
