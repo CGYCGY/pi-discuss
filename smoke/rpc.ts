@@ -389,8 +389,16 @@ async function phase1(scratch: Scratch): Promise<Phase1Outcome> {
     // moderator turn the file does not exist, switch_session loads an empty
     // session, and both checks below would measure nothing.
     const flushCursor = client.mark();
-    await client.request({ type: "prompt", message: "Reply with exactly: OK. Use no tools." }, 60_000);
-    await client.waitFrom(flushCursor, "moderator turn to settle", (m) => m.type === "agent_settled", ROUND_MS);
+    const flushResponse = await client.request({ type: "prompt", message: "Reply with exactly: OK. Use no tools." }, 60_000);
+    // Any other disposition means no run of ours will settle: "handled" never
+    // starts one, and "queued" would make the next agent_settled someone else's.
+    if (flushResponse.data?.["disposition"] !== "started") {
+      throw new Error(`the flush prompt did not start a run: ${JSON.stringify(flushResponse.data)}`);
+    }
+    const flushSettled = await client.waitFrom(flushCursor, "moderator turn to settle", (m) => m.type === "agent_settled", ROUND_MS);
+    if (flushSettled.message["aborted"] !== false) {
+      throw new Error(`the flush turn did not settle cleanly: ${JSON.stringify(flushSettled.message)}`);
+    }
     const stateResponse = await client.request({ type: "get_state" }, 30_000);
     const oldSessionFile = String(stateResponse.data?.["sessionFile"] ?? "");
     if (!existsSync(oldSessionFile)) {
